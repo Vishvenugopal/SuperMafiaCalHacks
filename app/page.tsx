@@ -71,15 +71,77 @@ export default function Home() {
   const [hostProvider, setHostProvider] = useState<string>('')
   const fileRef = useRef<HTMLInputElement>(null)
   const now = useNow(200)
+  const timerCheckedRef = useRef(false)
 
+  // Helper function to get narrator response
+  const getNarratorResponse = async (prompt: string) => {
+    try {
+      const gameContext = {
+        phase: g.phase,
+        round: g.round,
+        alivePlayers: g.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name })),
+        deadPlayers: g.players.filter(p => !p.alive).map(p => ({ id: p.id, name: p.name })),
+        totalPlayers: g.players.length,
+        recentEvents: g.eventLog.slice(-3)
+      }
+      
+      const res = await fetch('/api/host', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ question: prompt, gameContext }) 
+      })
+      const data = await res.json()
+      const answer = String(data.answer || '')
+      setHostResponse(answer)
+      setHostProvider(data.provider || 'unknown')
+      await ttsSpeak(answer)
+    } catch (error) {
+      console.error('Narrator error:', error)
+    }
+  }
+
+  // Auto-progress when discussion timer hits 0
+  useEffect(() => {
+    if (g.phase.kind === 'Discussion') {
+      const endsAt = g.phase.endsAt || 0
+      const remain = Math.max(0, Math.round((endsAt - now) / 1000))
+      
+      if (remain === 0 && !timerCheckedRef.current) {
+        timerCheckedRef.current = true
+        getNarratorResponse('Time is up! The village must now vote. Be urgent and dramatic. 1-2 sentences.')
+        setTimeout(() => {
+          g.startVoting()
+          timerCheckedRef.current = false
+        }, 2000)
+      } else if (remain > 0) {
+        timerCheckedRef.current = false
+      }
+    }
+  }, [g.phase, now])
+
+  // Narrator announcements for phase changes
   useEffect(() => {
     if (g.phase.kind === 'DayStart' && isTtsAvailable()) {
       const round = g.round
       const items = g.eventLog.filter(e => e.round === round && e.public)
-      const line = items.find(e => e.type === 'night_kill')
-        ? `Day ${round}. A player has been eliminated.`
-        : `Day ${round}. No one was eliminated.`
-      ttsSpeak(line)
+      const death = items.find(e => e.type === 'night_kill')
+      if (death) {
+        const victim = g.players.find(p => p.id === death.data.playerId)
+        getNarratorResponse(`The village awakens to find ${victim?.name} dead. Announce this death dramatically and ominously in 1-2 sentences.`)
+      } else {
+        getNarratorResponse('Everyone survived the night. Express relief but remind them the danger remains. 1-2 sentences.')
+      }
+    } else if (g.phase.kind === 'NightStart') {
+      getNarratorResponse('Night falls over the village. Warn them of the dangers ahead. Be ominous. 1-2 sentences.')
+    } else if (g.phase.kind === 'LynchResolve') {
+      const round = g.round
+      const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
+      if (lynch) {
+        const victim = g.players.find(p => p.id === lynch.data.playerId)
+        getNarratorResponse(`${victim?.name} has been eliminated by vote. Announce their fate dramatically. 1-2 sentences.`)
+      } else {
+        getNarratorResponse('The village could not agree on who to eliminate. Express the tension. 1-2 sentences.')
+      }
     }
   }, [g.phase, g.round, g.eventLog])
 
@@ -339,12 +401,34 @@ export default function Home() {
     const round = g.round
     const events = g.eventLog.filter(e => e.round === round && e.public)
     const death = events.find(e => e.type === 'night_kill')
-    const name = g.players.find(p => p.id === death?.data.playerId)?.name
+    const victim = g.players.find(p => p.id === death?.data.playerId)
+    
     return (
       <div className="space-y-6">
-        <div className="text-center text-2xl">Day {round}</div>
-        <div className="text-center text-xl">{death ? `${name} was eliminated` : 'No one was eliminated'}</div>
-        <Button className="w-full" onClick={() => g.startDiscussion()}>Start Discussion</Button>
+        <div className="text-center text-3xl font-bold mb-4">☀️ Day {round} Dawns</div>
+        
+        {death && victim ? (
+          <div className="space-y-4">
+            <div className="text-center text-xl opacity-80">The village awakens to a horrifying discovery...</div>
+            <div className="bg-red-900/30 border-2 border-red-500 rounded-xl p-6 space-y-3">
+              <div className="text-center text-4xl">💀</div>
+              <div className="text-center text-3xl font-bold text-red-400">{victim.name}</div>
+              <div className="text-center text-xl text-red-300">has been eliminated</div>
+              <div className="text-center text-sm opacity-70">Killed during the night</div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="text-center text-xl opacity-80">The village awakens...</div>
+            <div className="bg-green-900/30 border-2 border-green-500 rounded-xl p-6 space-y-3">
+              <div className="text-center text-4xl">✨</div>
+              <div className="text-center text-2xl font-bold text-green-400">Everyone Survived!</div>
+              <div className="text-center text-sm opacity-70">No one was killed during the night</div>
+            </div>
+          </div>
+        )}
+        
+        <Button className="w-full" onClick={() => g.startDiscussion()}>Begin Discussion</Button>
       </div>
     )
   }
@@ -426,12 +510,34 @@ export default function Home() {
   const renderLynchResolve = () => {
     const round = g.round
     const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
-    const name = g.players.find(p => p.id === lynch?.data.playerId)?.name
+    const victim = g.players.find(p => p.id === lynch?.data.playerId)
+    
     return (
       <div className="space-y-6">
-        <div className="text-center text-2xl">Lynch Result</div>
-        <div className="text-center text-xl">{lynch ? `${name} was eliminated` : 'No one was eliminated'}</div>
-        <Button className="w-full" onClick={() => g.continueAfterLynch()}>Continue</Button>
+        <div className="text-center text-3xl font-bold mb-4">⚖️ The Village Has Decided</div>
+        
+        {lynch && victim ? (
+          <div className="space-y-4">
+            <div className="text-center text-xl opacity-80">The votes have been counted...</div>
+            <div className="bg-orange-900/30 border-2 border-orange-500 rounded-xl p-6 space-y-3">
+              <div className="text-center text-4xl">🔥</div>
+              <div className="text-center text-3xl font-bold text-orange-400">{victim.name}</div>
+              <div className="text-center text-xl text-orange-300">has been eliminated</div>
+              <div className="text-center text-sm opacity-70">Voted out by the village</div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="text-center text-xl opacity-80">The votes have been counted...</div>
+            <div className="bg-blue-900/30 border-2 border-blue-500 rounded-xl p-6 space-y-3">
+              <div className="text-center text-4xl">🤝</div>
+              <div className="text-center text-2xl font-bold text-blue-400">No Consensus</div>
+              <div className="text-center text-sm opacity-70">No one was eliminated</div>
+            </div>
+          </div>
+        )}
+        
+        <Button className="w-full" onClick={() => g.continueAfterLynch()}>Continue to Night</Button>
       </div>
     )
   }
