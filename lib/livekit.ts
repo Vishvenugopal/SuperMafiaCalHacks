@@ -8,24 +8,36 @@ export async function initLiveKit() {
   
   const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_WS_URL
   if (!wsUrl) {
-    console.warn('LiveKit not configured, using Web Speech API')
+    console.warn('LiveKit not configured (NEXT_PUBLIC_LIVEKIT_WS_URL missing), using Web Speech API')
     return null
   }
 
+  console.log('Initializing LiveKit with URL:', wsUrl)
+
   try {
     // Get token from API
+    console.log('Fetching LiveKit token...')
     const response = await fetch('/api/livekit-token', { method: 'POST' })
-    const { token } = await response.json()
+    const data = await response.json()
+    
+    if (!response.ok || !data.token) {
+      console.error('Failed to get LiveKit token:', data)
+      return null
+    }
+    
+    console.log('LiveKit token received')
     
     // Dynamically import LiveKit SDK
     const { Room, RoomEvent } = await import('livekit-client')
     
     room = new Room()
-    await room.connect(wsUrl, token)
+    console.log('Connecting to LiveKit room...')
+    await room.connect(wsUrl, data.token)
     
+    console.log('✅ LiveKit connected successfully!')
     return room
   } catch (error) {
-    console.error('LiveKit init failed:', error)
+    console.error('❌ LiveKit init failed:', error)
     return null
   }
 }
@@ -34,15 +46,37 @@ export async function startLiveKitSTT(onTranscript: (text: string) => void) {
   if (!room) return null
   
   try {
-    const localTrack = await room.localParticipant.setMicrophoneEnabled(true)
-    audioTrack = localTrack
+    // Enable microphone through LiveKit
+    await room.localParticipant.setMicrophoneEnabled(true)
     
-    // Subscribe to transcription events if available
-    room.on('transcriptionReceived', (data: any) => {
-      if (data.text) onTranscript(data.text)
-    })
+    // Use Web Speech API for transcription
+    // (LiveKit handles the audio capture)
+    const w = window as any
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition
+    if (!SR) {
+      console.error('Speech recognition not available')
+      return null
+    }
     
-    return audioTrack
+    const recognition = new SR()
+    recognition.lang = 'en-US'
+    recognition.continuous = false
+    recognition.interimResults = false
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript
+      console.log('LiveKit STT result:', transcript)
+      onTranscript(transcript)
+    }
+    
+    recognition.onerror = (event: any) => {
+      console.error('LiveKit STT error:', event.error)
+    }
+    
+    recognition.start()
+    audioTrack = recognition
+    
+    return recognition
   } catch (error) {
     console.error('LiveKit STT failed:', error)
     return null
@@ -50,10 +84,25 @@ export async function startLiveKitSTT(onTranscript: (text: string) => void) {
 }
 
 export async function stopLiveKitSTT() {
-  if (audioTrack) {
-    audioTrack.stop()
-    audioTrack = null
+  // Stop speech recognition
+  if (audioTrack && typeof audioTrack.stop === 'function') {
+    try {
+      audioTrack.stop()
+    } catch (error) {
+      console.error('Failed to stop recognition:', error)
+    }
   }
+  
+  // Disable microphone through LiveKit
+  if (room) {
+    try {
+      await room.localParticipant.setMicrophoneEnabled(false)
+    } catch (error) {
+      console.error('Failed to stop microphone:', error)
+    }
+  }
+  
+  audioTrack = null
 }
 
 export async function speakWithLiveKit(text: string) {

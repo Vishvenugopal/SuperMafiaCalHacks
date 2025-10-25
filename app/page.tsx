@@ -67,6 +67,8 @@ export default function Home() {
   const g = useGame()
   const [newName, setNewName] = useState('')
   const [newPhoto, setNewPhoto] = useState<string | undefined>()
+  const [hostResponse, setHostResponse] = useState<string>('')
+  const [hostProvider, setHostProvider] = useState<string>('')
   const fileRef = useRef<HTMLInputElement>(null)
   const now = useNow(200)
 
@@ -359,12 +361,34 @@ export default function Home() {
           <Button className="flex-1" onClick={async () => {
             const q = await sttListenOnce()
             if (!q) return
+            setHostResponse('Thinking...')
+            setHostProvider('')
             try {
-              const res = await fetch('/api/host', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) })
+              // Build game context for the narrator
+              const gameContext = {
+                phase: g.phase,
+                round: g.round,
+                alivePlayers: g.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name, alive: p.alive })),
+                deadPlayers: g.players.filter(p => !p.alive).map(p => ({ id: p.id, name: p.name, alive: p.alive })),
+                totalPlayers: g.players.length,
+                recentEvents: g.eventLog.slice(-3) // Last 3 events
+              }
+              
+              const res = await fetch('/api/host', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ question: q, gameContext }) 
+              })
               const data = await res.json()
-              await ttsSpeak(String(data.answer || ''))
-            } catch {
-              await ttsSpeak('I could not reach the host right now.')
+              const answer = String(data.answer || '')
+              setHostResponse(answer)
+              setHostProvider(data.provider || 'unknown')
+              await ttsSpeak(answer)
+            } catch (error) {
+              const errorMsg = 'I could not reach the host right now.'
+              setHostResponse(errorMsg)
+              setHostProvider('error')
+              await ttsSpeak(errorMsg)
             }
           }}>Hold to ask host</Button>
         </div>
@@ -433,6 +457,34 @@ export default function Home() {
       {g.phase.kind === 'Voting' && renderVoting()}
       {g.phase.kind === 'LynchResolve' && renderLynchResolve()}
       {g.phase.kind === 'GameOver' && renderGameOver()}
+      
+      {/* AI Host Response Display */}
+      {hostResponse && (
+        <div className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto bg-gray-900 border-2 border-purple-500 rounded-lg p-4 shadow-lg">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">🎭</div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-bold text-purple-400">Host Response</span>
+                {hostProvider && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-purple-900 text-purple-300">
+                    {hostProvider === 'baseten' ? '🤖 Baseten' : 
+                     hostProvider === 'janitorai' ? '🎭 Janitor.ai' : 
+                     hostProvider === 'mock' ? '📝 Mock' : '⚠️ Error'}
+                  </span>
+                )}
+              </div>
+              <p className="text-white text-sm leading-relaxed">{hostResponse}</p>
+            </div>
+            <button 
+              onClick={() => setHostResponse('')}
+              className="text-gray-400 hover:text-white text-xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       <div className="opacity-60 text-xs text-center">{process.env.NEXT_PUBLIC_APP_NAME || 'SuperMafia'}</div>
     </main>
   )

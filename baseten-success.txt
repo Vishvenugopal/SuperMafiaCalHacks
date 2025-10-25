@@ -1,0 +1,34 @@
+Response:
+{
+  "id": "chatcmpl-3a87656b83b344b1a625b92d90802679",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "content": "\n\nThat's for you to figure out during the discussion phase.",
+        "role": "assistant"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "created": 1761389270,
+  "model": "zai-org/GLM-4.6",
+  "object": "chat.completion",
+  "usage": {
+    "prompt_tokens": 560,
+    "completion_tokens": 16,
+    "total_tokens": 576,
+    "prompt_tokens_details": {
+      "audio_tokens": 0,
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "accepted_prediction_tokens": 0,
+      "audio_tokens": 0,
+      "reasoning_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}
+
+Time: 2025-10-25T10:47:53.276Z

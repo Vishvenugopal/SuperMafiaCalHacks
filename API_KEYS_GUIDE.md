@@ -25,7 +25,24 @@ LIVEKIT_API_KEY=APIxxxxxxxxxxxxxxxxx
 LIVEKIT_API_SECRET=your_secret_here
 ```
 
-### 2. JanitorAI (AI Host Personality)
+### 2. Baseten (AI Narrator/Host - Recommended)
+**What it does**: Powers a game-aware AI narrator that knows the current game state and provides immersive, context-aware commentary.
+
+**How to get it**:
+1. Visit https://baseten.co
+2. Sign up for an account
+3. Get your API key from account settings
+4. Choose a model from their library (e.g., `zai-org/GLM-4.6`, `meta-llama/Llama-3.1-8B-Instruct`, etc.)
+
+**Add to .env.local**:
+```env
+BASETEN_API_KEY=your_api_key_here
+BASETEN_MODEL_ID=zai-org/GLM-4.6
+```
+
+**Note**: Use the full model name (e.g., `zai-org/GLM-4.6`) not a deployment ID. The app uses Baseten's OpenAI-compatible inference endpoint.
+
+### 3. JanitorAI (AI Host Personality - Alternative)
 **What it does**: Powers the AI host with personality and context-aware responses.
 
 **How to get it**:
@@ -46,12 +63,20 @@ JANITOR_AI_CHARACTER_ID=abc123def456
 
 ## How They Work Together
 
-- **LiveKit** handles all voice input/output (STT/TTS)
-- **JanitorAI** provides the AI host's personality and responses
+- **LiveKit** handles voice input (STT - Speech to Text)
+- **Baseten** provides game-aware AI narrator (knows current phase, players, events)
+- **ElevenLabs** provides high-quality voice output (TTS)
 - When you ask the host a question:
-  1. LiveKit captures your voice → converts to text
-  2. Text is sent to JanitorAI → gets personality-driven response
-  3. Response is sent back through LiveKit → spoken aloud
+  1. Your voice is captured and converted to text (LiveKit or Web Speech API)
+  2. Question + current game state is sent to Baseten → gets context-aware response
+  3. Response is synthesized using ElevenLabs → spoken aloud with natural voice
+
+## AI Priority Order
+
+The app tries AI services in this order:
+1. **Baseten** (best - game-aware, knows what's happening)
+2. **JanitorAI** (good - personality-driven but less game-aware)
+3. **Mock Host** (fallback - basic scripted responses)
 
 ## Fallback Behavior
 
