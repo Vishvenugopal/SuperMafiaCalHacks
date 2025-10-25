@@ -148,14 +148,47 @@ export default function Home() {
     )
   }
 
+  // All state at parent level to prevent focus loss
   const [roleRevealed, setRoleRevealed] = useState(false)
   const [lastRevealedIndex, setLastRevealedIndex] = useState(-1)
+  const [nightStep, setNightStep] = useState<'medic' | 'wolves' | 'seer' | 'done'>('medic')
+  const [nightRevealed, setNightRevealed] = useState(false)
+  const [lastNightStep, setLastNightStep] = useState<string>('')
+  const [peekResult, setPeekResult] = useState<{ playerId: string; role: string } | null>(null)
 
   // Reset revealed state when moving to next player
   if (g.phase.kind === 'RoleAssignment' && g.ui.roleRevealIndex !== lastRevealedIndex) {
     if (roleRevealed) setRoleRevealed(false)
     setLastRevealedIndex(g.ui.roleRevealIndex)
   }
+
+  // Reset night revealed state when step changes
+  if (g.phase.kind === 'NightStart' && nightStep !== lastNightStep) {
+    if (nightRevealed) setNightRevealed(false)
+    setLastNightStep(nightStep)
+  }
+
+  // Reset night step when phase changes
+  useEffect(() => {
+    if (g.phase.kind === 'NightStart') {
+      setNightStep('medic')
+      setNightRevealed(false)
+      setPeekResult(null)
+    }
+  }, [g.phase.kind])
+
+  // Auto-advance through missing roles in night phase
+  useEffect(() => {
+    if (g.phase.kind !== 'NightStart') return
+    const medic = g.players.find(p => p.role === 'medic' && p.alive)
+    const seer = g.players.find(p => p.role === 'seer' && p.alive)
+    const wolves = g.players.filter(p => p.role === 'werewolf' && p.alive)
+    
+    if (nightStep === 'done') return
+    if (nightStep === 'medic' && !medic) setNightStep('wolves')
+    if (nightStep === 'wolves' && wolves.length === 0) setNightStep('seer')
+    if (nightStep === 'seer' && !seer) setNightStep('done')
+  }, [g.phase.kind, nightStep, g.players])
 
   const renderRoleAssignment = () => {
     const id = g.ui.roleRevealOrder[g.ui.roleRevealIndex]
@@ -184,35 +217,27 @@ export default function Home() {
     )
   }
 
-  function NightStart() {
-    const [step, setStep] = useState<'medic' | 'wolves' | 'seer' | 'done'>('medic')
+  const renderNightStart = () => {
     const medic = g.players.find(p => p.role === 'medic' && p.alive)
     const seer = g.players.find(p => p.role === 'seer' && p.alive)
     const wolves = g.players.filter(p => p.role === 'werewolf' && p.alive)
-    useEffect(() => {
-      if (step === 'done') return
-      if (step === 'medic' && !medic) setStep('wolves')
-      if (step === 'seer' && !seer) setStep('done')
-      if (step === 'wolves' && wolves.length === 0) setStep('seer')
-    }, [step, medic, seer, wolves.length])
-
     const alive = g.players.filter(p => p.alive)
 
-    if (step === 'medic' && medic) {
-      const [revealed, setRev] = useState(false)
+    if (nightStep === 'medic' && medic) {
       return (
         <div className="space-y-4">
-          {!revealed ? (
+          {!nightRevealed ? (
             <>
-              <div className="text-center text-2xl">Pass to {medic.name} (Medic)</div>
-              <Button className="w-full" onClick={() => setRev(true)}>Tap to act</Button>
+              <div className="text-center text-2xl">Pass to {medic.name}</div>
+              <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your action</Button>
             </>
           ) : (
             <div className="space-y-3">
+              <div className="text-center text-xl">💉 Medic</div>
               <div className="text-center">Choose a player to protect</div>
               <div className="grid grid-cols-2 gap-2">
                 {alive.map(p => (
-                  <button key={p.id} onClick={() => { g.chooseProtect(p.id); setStep('wolves') }} className="bg-white/10 rounded-xl p-3">
+                  <button key={p.id} onClick={() => { g.chooseProtect(p.id); setNightStep('wolves'); setNightRevealed(false) }} className="bg-white/10 rounded-xl p-3">
                     <div className="text-center">{p.name}</div>
                   </button>
                 ))}
@@ -223,22 +248,23 @@ export default function Home() {
       )
     }
 
-    if (step === 'wolves') {
-      const [revealed, setRev] = useState(false)
+    if (nightStep === 'wolves') {
+      const wolfNames = wolves.map(w => w.name).join(', ')
       const targets = alive.filter(p => p.role !== 'werewolf')
       return (
         <div className="space-y-4">
-          {!revealed ? (
+          {!nightRevealed ? (
             <>
-              <div className="text-center text-2xl">Pass to Werewolves</div>
-              <Button className="w-full" onClick={() => setRev(true)}>Tap to act</Button>
+              <div className="text-center text-2xl">Pass to {wolfNames}</div>
+              <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your action</Button>
             </>
           ) : (
             <div className="space-y-3">
+              <div className="text-center text-xl">🐺 Werewolf</div>
               <div className="text-center">Choose a player to eliminate</div>
               <div className="grid grid-cols-2 gap-2">
                 {targets.map(p => (
-                  <button key={p.id} onClick={() => { g.chooseKill(p.id); setStep('seer') }} className="bg-white/10 rounded-xl p-3">
+                  <button key={p.id} onClick={() => { g.chooseKill(p.id); setNightStep('seer'); setNightRevealed(false) }} className="bg-white/10 rounded-xl p-3">
                     <div className="text-center">{p.name}</div>
                   </button>
                 ))}
@@ -249,22 +275,42 @@ export default function Home() {
       )
     }
 
-    if (step === 'seer' && seer) {
-      const [revealed, setRev] = useState(false)
+    if (nightStep === 'seer' && seer) {
       const targets = alive.filter(p => p.id !== seer.id)
+      
+      if (peekResult) {
+        const peekedPlayer = g.players.find(p => p.id === peekResult.playerId)
+        const roleDisplay = peekResult.role === 'werewolf' ? '🐺 Werewolf' : 
+                           peekResult.role === 'seer' ? '🔮 Seer' : 
+                           peekResult.role === 'medic' ? '💉 Medic' : '🧑 Villager'
+        return (
+          <div className="space-y-4">
+            <div className="text-center text-xl">🔮 Seer Vision</div>
+            <div className="text-center text-2xl">{peekedPlayer?.name}</div>
+            <div className="text-center text-3xl">{roleDisplay}</div>
+            <Button className="w-full" onClick={() => { setNightStep('done'); setNightRevealed(false); setPeekResult(null) }}>Continue</Button>
+          </div>
+        )
+      }
+      
       return (
         <div className="space-y-4">
-          {!revealed ? (
+          {!nightRevealed ? (
             <>
-              <div className="text-center text-2xl">Pass to {seer.name} (Seer)</div>
-              <Button className="w-full" onClick={() => setRev(true)}>Tap to act</Button>
+              <div className="text-center text-2xl">Pass to {seer.name}</div>
+              <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your action</Button>
             </>
           ) : (
             <div className="space-y-3">
+              <div className="text-center text-xl">🔮 Seer</div>
               <div className="text-center">Choose a player to peek</div>
               <div className="grid grid-cols-2 gap-2">
                 {targets.map(p => (
-                  <button key={p.id} onClick={() => { g.choosePeek(p.id); setStep('done') }} className="bg-white/10 rounded-xl p-3">
+                  <button key={p.id} onClick={() => { 
+                    g.choosePeek(p.id)
+                    const role = p.role || 'villager'
+                    setPeekResult({ playerId: p.id, role })
+                  }} className="bg-white/10 rounded-xl p-3">
                     <div className="text-center">{p.name}</div>
                   </button>
                 ))}
@@ -275,7 +321,7 @@ export default function Home() {
       )
     }
 
-    if (step === 'done') {
+    if (nightStep === 'done') {
       return (
         <div className="space-y-4">
           <div className="text-center text-2xl">Night actions complete</div>
@@ -287,7 +333,7 @@ export default function Home() {
     return null
   }
 
-  function DayStart() {
+  const renderDayStart = () => {
     const round = g.round
     const events = g.eventLog.filter(e => e.round === round && e.public)
     const death = events.find(e => e.type === 'night_kill')
@@ -301,7 +347,7 @@ export default function Home() {
     )
   }
 
-  function Discussion() {
+  const renderDiscussion = () => {
     const endsAt = g.phase.kind === 'Discussion' ? g.phase.endsAt || 0 : 0
     const remain = Math.max(0, Math.round((endsAt - now) / 1000))
     return (
@@ -326,7 +372,7 @@ export default function Home() {
     )
   }
 
-  function Voting() {
+  const renderVoting = () => {
     if (g.phase.kind !== 'Voting') return null
     const voterId = g.phase.voterQueue[g.phase.currentIndex] || null
     const voter = g.players.find(p => p.id === voterId)
@@ -353,7 +399,7 @@ export default function Home() {
     )
   }
 
-  function LynchResolve() {
+  const renderLynchResolve = () => {
     const round = g.round
     const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
     const name = g.players.find(p => p.id === lynch?.data.playerId)?.name
@@ -366,7 +412,7 @@ export default function Home() {
     )
   }
 
-  function GameOver() {
+  const renderGameOver = () => {
     if (g.phase.kind !== 'GameOver') return null
     return (
       <div className="space-y-6">
@@ -381,12 +427,12 @@ export default function Home() {
     <main className="space-y-6">
       {g.phase.kind === 'Lobby' && renderLobby()}
       {g.phase.kind === 'RoleAssignment' && renderRoleAssignment()}
-      {g.phase.kind === 'NightStart' && <NightStart />}
-      {g.phase.kind === 'DayStart' && <DayStart />}
-      {g.phase.kind === 'Discussion' && <Discussion />}
-      {g.phase.kind === 'Voting' && <Voting />}
-      {g.phase.kind === 'LynchResolve' && <LynchResolve />}
-      {g.phase.kind === 'GameOver' && <GameOver />}
+      {g.phase.kind === 'NightStart' && renderNightStart()}
+      {g.phase.kind === 'DayStart' && renderDayStart()}
+      {g.phase.kind === 'Discussion' && renderDiscussion()}
+      {g.phase.kind === 'Voting' && renderVoting()}
+      {g.phase.kind === 'LynchResolve' && renderLynchResolve()}
+      {g.phase.kind === 'GameOver' && renderGameOver()}
       <div className="opacity-60 text-xs text-center">{process.env.NEXT_PUBLIC_APP_NAME || 'SuperMafia'}</div>
     </main>
   )

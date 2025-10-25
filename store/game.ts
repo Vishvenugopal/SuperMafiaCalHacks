@@ -94,7 +94,8 @@ export const useGame = create<Store>((set, get) => ({
     if (s.players.length < 5) return
     const seed = s.seed
     const players = assignRoles(s.players, s.settings, seed)
-    const order = shuffle(players.map(p => p.id), mulberry32(seed + 1))
+    // Keep original player order for role reveals (don't shuffle)
+    const order = players.map(p => p.id)
     set({ players, phase: { kind: 'RoleAssignment' }, ui: { roleRevealOrder: order, roleRevealIndex: 0 }, round: 1 })
   },
 

@@ -66,10 +66,19 @@ Open http://localhost:3000
 2. Configure roles (optional)
 3. Choose theme and host personality
 4. Start game
-5. Pass phone for role reveals
-6. Play through night and day cycles
-7. Vote to eliminate suspects
+5. Pass phone for role reveals (in order players were added)
+6. **Night Phase**: Pass to each special role in order
+   - Medic protects someone (if they're killed, protection saves them)
+   - Werewolves choose a target
+   - Seer peeks at someone's role
+7. **Day Phase**: Discuss and vote to eliminate suspects
 8. Win when all werewolves are eliminated (villagers) or werewolves equal villagers (werewolves)
+
+### Role Abilities
+- **Medic**: Protect one player each night (werewolves can still target them, but protection saves them)
+- **Werewolf**: Choose one player to eliminate each night
+- **Seer**: Peek at one player's role each night
+- **Villager**: No special ability, but crucial for voting
 
 ## Tech Stack
 
