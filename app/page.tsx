@@ -1,8 +1,8 @@
 "use client"
 import { useGame } from '@/store/game'
 import { Player } from '@/lib/types'
-import { useRef, useState, useEffect, type ButtonHTMLAttributes, type ReactNode, type ChangeEvent } from 'react'
-import { ttsSpeak, isTtsAvailable, sttListenOnce } from '@/lib/voice'
+import { useRef, useState, useEffect, useCallback, type ButtonHTMLAttributes, type ReactNode, type ChangeEvent } from 'react'
+import { ttsSpeak, isTtsAvailable, startSttStream, stopSttStream } from '@/lib/voice'
 
 function Button(props: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
@@ -69,9 +69,12 @@ export default function Home() {
   const [newPhoto, setNewPhoto] = useState<string | undefined>()
   const [hostResponse, setHostResponse] = useState<string>('')
   const [hostProvider, setHostProvider] = useState<string>('')
+  const [userTranscript, setUserTranscript] = useState('')
+  const [listening, setListening] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const now = useNow(200)
   const timerCheckedRef = useRef(false)
+  const kbHoldingRef = useRef(false)
 
   // Helper function to get narrator response
   const getNarratorResponse = async (prompt: string) => {
@@ -99,6 +102,73 @@ export default function Home() {
       console.error('Narrator error:', error)
     }
   }
+
+  // Handle final transcript -> call host (wrapped in useCallback to prevent stale closures)
+  const handleFinalTranscript = useCallback(async (finalText: string | null) => {
+    const q = (finalText || '').trim()
+    setListening(false)
+    if (!q) return
+    setHostResponse('Thinking...')
+    setHostProvider('')
+    try {
+      const gameContext = {
+        phase: g.phase,
+        round: g.round,
+        alivePlayers: g.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name, alive: p.alive })),
+        deadPlayers: g.players.filter(p => !p.alive).map(p => ({ id: p.id, name: p.name, alive: p.alive })),
+        totalPlayers: g.players.length,
+        recentEvents: g.eventLog.slice(-3)
+      }
+      const res = await fetch('/api/host', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, gameContext })
+      })
+      const data = await res.json()
+      const answer = String(data.answer || '')
+      setHostResponse(answer)
+      setHostProvider(data.provider || 'unknown')
+      await ttsSpeak(answer)
+    } catch (error) {
+      const errorMsg = 'I could not reach the host right now.'
+      setHostResponse(errorMsg)
+      setHostProvider('error')
+      await ttsSpeak(errorMsg)
+    }
+  }, [g.phase, g.round, g.players, g.eventLog])
+
+  // Keyboard hold-to-talk (Space or V)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+      if (key !== ' ' && key !== 'v') return
+      // avoid when typing in inputs/textareas/contentEditable
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (kbHoldingRef.current) return
+      e.preventDefault() // Prevent space from scrolling page
+      kbHoldingRef.current = true
+      setUserTranscript('')
+      const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
+        handleFinalTranscript(finalText)
+      })
+      if (ok) setListening(true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+      if ((key === ' ' || key === 'v') && kbHoldingRef.current) {
+        e.preventDefault()
+        kbHoldingRef.current = false
+        stopSttStream(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [handleFinalTranscript])
 
   // Auto-progress when discussion timer hits 0
   useEffect(() => {
@@ -436,45 +506,88 @@ export default function Home() {
   const renderDiscussion = () => {
     const endsAt = g.phase.kind === 'Discussion' ? g.phase.endsAt || 0 : 0
     const remain = Math.max(0, Math.round((endsAt - now) / 1000))
+    const alivePlayers = g.players.filter(p => p.alive)
+    const deadPlayers = g.players.filter(p => !p.alive)
     return (
       <div className="space-y-6">
         <div className="text-center text-2xl">Discussion</div>
         <div className="text-center text-xl">{remain}s remaining</div>
-        <div className="flex gap-2">
-          <Button className="flex-1" onClick={() => g.startVoting()}>Start Voting</Button>
-          <Button className="flex-1" onClick={async () => {
-            const q = await sttListenOnce()
-            if (!q) return
-            setHostResponse('Thinking...')
-            setHostProvider('')
-            try {
-              // Build game context for the narrator
-              const gameContext = {
-                phase: g.phase,
-                round: g.round,
-                alivePlayers: g.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name, alive: p.alive })),
-                deadPlayers: g.players.filter(p => !p.alive).map(p => ({ id: p.id, name: p.name, alive: p.alive })),
-                totalPlayers: g.players.length,
-                recentEvents: g.eventLog.slice(-3) // Last 3 events
-              }
-              
-              const res = await fetch('/api/host', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ question: q, gameContext }) 
+        
+        {/* Player Status */}
+        <div className="space-y-2">
+          <div className="text-sm font-semibold opacity-70">Players</div>
+          <div className="grid grid-cols-2 gap-2">
+            {alivePlayers.map(p => (
+              <div key={p.id} className="flex items-center gap-2 bg-green-900/20 border border-green-500/30 rounded-lg p-2">
+                <div className="w-8 h-8 rounded-full bg-white/10 overflow-hidden flex items-center justify-center">
+                  {p.avatarDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-sm">🙂</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{p.name}</div>
+                  <div className="text-xs text-green-400">Alive</div>
+                </div>
+              </div>
+            ))}
+            {deadPlayers.map(p => (
+              <div key={p.id} className="flex items-center gap-2 bg-red-900/20 border border-red-500/30 rounded-lg p-2 opacity-60">
+                <div className="w-8 h-8 rounded-full bg-white/10 overflow-hidden flex items-center justify-center">
+                  {p.avatarDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover grayscale" />
+                  ) : (
+                    <div className="text-sm">💀</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate line-through">{p.name}</div>
+                  <div className="text-xs text-red-400">Dead</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Hold-to-talk controls */}
+        <div className="flex flex-col items-center gap-3">
+          <div
+            role="button"
+            aria-label={listening ? 'Release to stop talking' : 'Hold to talk'}
+            className={`w-24 h-24 rounded-full flex items-center justify-center select-none ${listening ? 'bg-red-500 animate-pulse' : 'bg-white text-black'} shadow-lg active:scale-95`}
+            onMouseDown={() => {
+              setUserTranscript('')
+              const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
+                handleFinalTranscript(finalText)
               })
-              const data = await res.json()
-              const answer = String(data.answer || '')
-              setHostResponse(answer)
-              setHostProvider(data.provider || 'unknown')
-              await ttsSpeak(answer)
-            } catch (error) {
-              const errorMsg = 'I could not reach the host right now.'
-              setHostResponse(errorMsg)
-              setHostProvider('error')
-              await ttsSpeak(errorMsg)
-            }
-          }}>Hold to ask host</Button>
+              if (ok) setListening(true)
+            }}
+            onMouseUp={() => stopSttStream(true)}
+            onMouseLeave={() => listening && stopSttStream(true)}
+            onTouchStart={() => {
+              setUserTranscript('')
+              const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
+                handleFinalTranscript(finalText)
+              })
+              if (ok) setListening(true)
+            }}
+            onTouchEnd={() => stopSttStream(true)}
+          >
+            <span className="text-3xl">🎙️</span>
+          </div>
+          <div className="text-xs opacity-70">Hold Space or V to talk</div>
+          {/* Live transcript */}
+          <div className="w-full">
+            <div className={`min-h-[48px] px-3 py-2 rounded-lg border ${listening ? 'border-red-400 bg-red-950/30' : 'border-white/20 bg-white/5'}`}>
+              <div className="text-sm whitespace-pre-wrap break-words">{userTranscript || (listening ? 'Listening…' : 'Tap and hold the mic to ask the host') }</div>
+            </div>
+          </div>
+          <div className="flex gap-2 w-full">
+            <Button className="flex-1" onClick={() => g.startVoting()}>Start Voting</Button>
+          </div>
         </div>
       </div>
     )
