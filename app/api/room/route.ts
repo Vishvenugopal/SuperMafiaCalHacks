@@ -8,15 +8,12 @@ interface Room {
     id: string
     name: string
     deviceId: string
-    avatarDataUrl?: string
     joinedAt: number
   }>
   gamePhase: 'lobby' | 'playing'
   gameState: any
   nightActionsComplete: Set<string> // Track which players completed night actions
   rolesRevealed: Set<string> // Track which players revealed their role
-  nightActions: Map<string, { role: string; action: string; targetId?: string }> // Store night actions from all players
-  skipVotes: Set<string> // Track who voted to skip player discussion
   createdAt: number
   lastActivity: number
 }
@@ -45,7 +42,7 @@ export async function POST(request: Request) {
     } catch {
       body = {}
     }
-    const { action, roomCode, playerName, deviceId, gameState, trackingType, avatarDataUrl } = body
+    const { action, roomCode, playerName, deviceId, gameState, trackingType } = body
     if (!action) {
       return NextResponse.json({ success: false, error: 'Missing action' }, { status: 400 })
     }
@@ -63,15 +60,12 @@ export async function POST(request: Request) {
             id: playerId,
             name: playerName,
             deviceId,
-            avatarDataUrl,
             joinedAt: Date.now()
           }],
           gamePhase: 'lobby',
           gameState: null,
           nightActionsComplete: new Set(),
           rolesRevealed: new Set(),
-          nightActions: new Map(),
-          skipVotes: new Set(),
           createdAt: Date.now(),
           lastActivity: Date.now()
         }
@@ -119,7 +113,6 @@ export async function POST(request: Request) {
           id: playerId,
           name: playerName,
           deviceId,
-          avatarDataUrl,
           joinedAt: Date.now()
         })
         
@@ -162,11 +155,7 @@ export async function POST(request: Request) {
           nightActionsComplete: room.nightActionsComplete.size,
           rolesRevealed: room.rolesRevealed.size,
           allNightActionsComplete: room.nightActionsComplete.size >= room.players.length,
-          allRolesRevealed: room.rolesRevealed.size >= room.players.length,
-          room: {
-            skipVotes: room.skipVotes.size,
-            allVotedSkip: room.skipVotes.size >= room.players.length
-          }
+          allRolesRevealed: room.rolesRevealed.size >= room.players.length
         })
       }
       
@@ -292,11 +281,8 @@ export async function POST(request: Request) {
         
         if (trackingType === 'night') {
           room.nightActionsComplete.clear()
-          room.nightActions.clear()
         } else if (trackingType === 'roles') {
           room.rolesRevealed.clear()
-        } else if (trackingType === 'skip') {
-          room.skipVotes.clear()
         }
         
         room.lastActivity = Date.now()
@@ -305,91 +291,6 @@ export async function POST(request: Request) {
         
         return NextResponse.json({
           success: true
-        })
-      }
-      
-      case 'submit_night_action': {
-        // Submit a night action (kill, protect, peek)
-        const room = rooms.get(roomCode?.toUpperCase())
-        const { role, nightAction, targetId } = body
-        
-        if (!room) {
-          return NextResponse.json({
-            success: false,
-            error: 'Room not found'
-          }, { status: 404 })
-        }
-        
-        room.nightActions.set(deviceId, { role, action: nightAction, targetId })
-        room.lastActivity = Date.now()
-        
-        console.log(`Night action submitted: ${deviceId} (${role}) - ${nightAction} ${targetId || 'none'}`)
-        
-        return NextResponse.json({
-          success: true,
-          actionsSubmitted: room.nightActions.size
-        })
-      }
-      
-      case 'get_night_actions': {
-        // Get all submitted night actions (host only)
-        const room = rooms.get(roomCode?.toUpperCase())
-        
-        if (!room) {
-          return NextResponse.json({
-            success: false,
-            error: 'Room not found'
-          }, { status: 404 })
-        }
-        
-        // Aggregate night actions by type
-        let killTargetId: string | undefined
-        let protectId: string | undefined
-        let peekTargetId: string | undefined
-        
-        for (const [, action] of room.nightActions) {
-          if (action.action === 'kill' && action.targetId) {
-            killTargetId = action.targetId
-          } else if (action.action === 'protect' && action.targetId) {
-            protectId = action.targetId
-          } else if (action.action === 'peek' && action.targetId) {
-            peekTargetId = action.targetId
-          }
-        }
-        
-        console.log(`Aggregated night actions: kill=${killTargetId}, protect=${protectId}, peek=${peekTargetId}`)
-        
-        return NextResponse.json({
-          success: true,
-          nightActions: {
-            killTargetId,
-            protectId,
-            peekTargetId
-          }
-        })
-      }
-      
-      case 'vote_skip': {
-        // Vote to skip player discussion phase
-        const room = rooms.get(roomCode?.toUpperCase())
-        
-        if (!room) {
-          return NextResponse.json({
-            success: false,
-            error: 'Room not found'
-          }, { status: 404 })
-        }
-        
-        room.skipVotes.add(deviceId)
-        room.lastActivity = Date.now()
-        
-        console.log(`Skip vote added: ${deviceId} (${room.skipVotes.size}/${room.players.length})`)
-        
-        return NextResponse.json({
-          success: true,
-          skipVotes: room.skipVotes.size,
-          total: room.players.length,
-          allVotedSkip: room.skipVotes.size >= room.players.length
         })
       }
       

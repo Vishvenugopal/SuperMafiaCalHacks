@@ -24,18 +24,18 @@ async function callBaseten(question: string, gameContext?: any): Promise<string>
       messages: [
         {
           role: "system",
-          content: "LANGUAGE: ENGLISH ONLY. You are an English-speaking game narrator for Werewolf/Mafia. 你必须用英语回答。不要用中文。Always reply in English, never Chinese. Keep responses SHORT (1-2 sentences). Only reveal information players should know."
+          content: "You are an English-speaking game narrator and host for a Werewolf/Mafia game. CRITICAL: You MUST respond ONLY in English. Never use Chinese or any other language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions."
         },
         {
           role: "user",
-          content: `[RESPOND IN ENGLISH ONLY - NO CHINESE]\n\nGame State: ${gameContext ? JSON.stringify(gameContext, null, 2) : 'Not started'}\n\nQuestion: ${question}\n\n[CRITICAL: Your response must be in English. 用英语回答。Brief answer (1-2 sentences).]`
+          content: `Current Game State:\n${gameContext ? JSON.stringify(gameContext, null, 2) : 'Game not started yet'}\n\nPlayer Question: ${question}\n\nIMPORTANT: Respond in ENGLISH ONLY. No Chinese. Provide a brief, direct answer in English (1-2 sentences only).`
         }
       ],
-      max_tokens: 150,
-      temperature: 0.5,
-      top_p: 0.8,
-      stream: false,
-      response_format: { type: "text" }
+      language: "en",
+      max_tokens: 100,
+      temperature: 0.7,
+      top_p: 0.9,
+      stream: false
     })
   })
 
@@ -88,23 +88,7 @@ async function callBaseten(question: string, gameContext?: any): Promise<string>
     responseText = 'I could not process that question.'
   }
   
-  const trimmed = responseText.trim()
-  
-  // Check if response contains Chinese characters
-  const hasChinese = /[\u4e00-\u9fa5]/.test(trimmed)
-  if (hasChinese) {
-    console.warn('⚠️ Baseten returned Chinese text, using English fallback')
-    // Return a generic English response instead
-    if (question.toLowerCase().includes('night')) {
-      return 'Night falls over the village. The werewolves are hunting.'
-    } else if (question.toLowerCase().includes('day')) {
-      return 'The village awakens. Time to discuss who might be the werewolf.'
-    } else {
-      return 'The game continues. Stay alert and trust your instincts.'
-    }
-  }
-  
-  return trimmed
+  return responseText.trim()
 }
 
 async function callJanitorAI(question: string, gameContext?: any): Promise<string> {
