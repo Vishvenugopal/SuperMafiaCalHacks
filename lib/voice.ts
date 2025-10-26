@@ -1,4 +1,12 @@
 let speaking = false
+let lastTtsAt = 0
+let lastTtsText = ''
+let lastTtsTextAt = 0
+const TTS_COOLDOWN_MS = 4000 // minimum gap between TTS requests
+const TTS_DEDUPE_WINDOW_MS = 15000 // drop identical text within this window
+const TTS_WINDOW_MS = 60_000
+const TTS_MAX_PER_WINDOW = 8
+let ttsTimes: number[] = []
 let rec: any = null
 let isListeningFlag = false
 let lastPartial = ''
@@ -10,9 +18,55 @@ let onFinalCb: ((t: string) => void) | null = null
 export async function ttsSpeak(text: string, personality?: 'default' | 'funny' | 'rap') {
   if (typeof window === 'undefined') return
   if (!text) return
+  const now = Date.now()
+  // Clean sliding window
+  ttsTimes = ttsTimes.filter(t => now - t < TTS_WINDOW_MS)
   
-  // Try to use a TTS API endpoint if available
+  // Drop if currently speaking (avoid overlaps and dogpiles)
+  if (speaking) {
+    console.log('TTS: already speaking, dropping new request')
+    return
+  }
+  
+  // Drop repeated text within short window
+  if (text === lastTtsText && (now - lastTtsTextAt) < TTS_DEDUPE_WINDOW_MS) {
+    console.log('TTS: duplicate text within window, dropping')
+    return
+  }
+  
+  // Cooldown and rate limit
+  if (now - lastTtsAt < TTS_COOLDOWN_MS) {
+    console.log('TTS: cooldown active, dropping')
+    return
+  }
+  if (ttsTimes.length >= TTS_MAX_PER_WINDOW) {
+    console.log('TTS: per-minute rate limit reached, dropping')
+    return
+  }
+  lastTtsAt = now
+  lastTtsText = text
+  lastTtsTextAt = now
+  ttsTimes.push(now)
+  
+  // Respect global mute toggle (shared across modes)
   try {
+    const muted = window.localStorage?.getItem('tts_disabled') === '1'
+    if (muted) {
+      console.log('TTS: muted via localStorage, skipping')
+      return
+    }
+  } catch {}
+
+  // Try to use a TTS API endpoint if available, unless temporarily disabled
+  try {
+    try {
+      const disabledUntilStr = window.localStorage?.getItem('elevenlabs_disabled_until') || '0'
+      const disabledUntil = parseInt(disabledUntilStr, 10) || 0
+      if (Date.now() < disabledUntil) {
+        throw new Error('elevenlabs temporarily disabled')
+      }
+    } catch {}
+
     const response = await fetch('/api/tts-elevenlabs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -41,6 +95,15 @@ export async function ttsSpeak(text: string, personality?: 'default' | 'funny' |
         audio.play()
       })
       return
+    } else {
+      // Server fallback or error; back off future requests for a while
+      try {
+        const data = await response.json().catch(() => null as any)
+        if (data?.fallback) {
+          const backoffMs = 10 * 60 * 1000 // 10 minutes
+          window.localStorage?.setItem('elevenlabs_disabled_until', String(Date.now() + backoffMs))
+        }
+      } catch {}
     }
   } catch (error) {
     console.log('TTS API not available, using Web Speech API fallback')
