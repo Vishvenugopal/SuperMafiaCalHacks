@@ -56,10 +56,15 @@ interface RoomPlayer {
   id: string
   name: string
   deviceId: string
+  avatarDataUrl?: string
 }
 
 export default function JudgeMode() {
+  // Use selective subscriptions for better re-renders
   const g = useGame()
+  const gamePhase = useGame(s => s.phase)
+  const gamePlayers = useGame(s => s.players)
+  const gameRound = useGame(s => s.round)
   
   // Multi-device state
   const [phase, setPhase] = useState<'join' | 'lobby' | 'playing'>('join')
@@ -77,6 +82,7 @@ export default function JudgeMode() {
   const [isTalking, setIsTalking] = useState(false)
   const [judgeResponse, setJudgeResponse] = useState('')
   const [hostResponse, setHostResponse] = useState<string>('')
+  const [hostProvider, setHostProvider] = useState<string>('')
   const [userTranscript, setUserTranscript] = useState('')
   const [listening, setListening] = useState(false)
   const kbHoldingRef = useRef(false)
@@ -93,6 +99,11 @@ export default function JudgeMode() {
   const [showNightIntro, setShowNightIntro] = useState(false)
   const [nightActionSubmitted, setNightActionSubmitted] = useState(false)
   const [peekCompleted, setPeekCompleted] = useState(false)
+  const [playerTalkingNarrated, setPlayerTalkingNarrated] = useState(false)
+  const [skipVotes, setSkipVotes] = useState(0)
+  const [hasVotedSkip, setHasVotedSkip] = useState(false)
+  const [playerAvatar, setPlayerAvatar] = useState<string | undefined>()
+  const fileRef = useRef<HTMLInputElement>(null)
   
   // Get my player info
   const myPlayer = g.players.find(p => p.name === myPlayerName)
@@ -126,13 +137,76 @@ export default function JudgeMode() {
     }
   }, [roomCode, deviceId])
   
-  // Reset roleRevealed when entering RoleAssignment phase
+  // Helper function to get narrator response
+  const getNarratorResponse = useCallback(async (prompt: string) => {
+    try {
+      const gameContext = {
+        phase: gamePhase,
+        round: g.round,
+        players: g.players.map(p => ({ name: p.name, alive: p.alive })),
+        alivePlayers: g.players.filter(p => p.alive).length,
+        recentEvents: g.eventLog.slice(-3)
+      }
+      
+      const res = await fetch('/api/host', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ prompt, context: gameContext, settings: g.settings }) 
+      })
+      const data = await res.json()
+      const answer = String(data.answer || '')
+      setHostResponse(answer)
+      setHostProvider(data.provider || 'unknown')
+      await ttsSpeak(answer)
+    } catch (error) {
+      console.error('Narrator error:', error)
+    }
+  }, [gamePhase, g.round, g.players, g.eventLog, g.settings])
+  
+  // Narrator announcements for phase changes
   useEffect(() => {
-    if (g.phase.kind === 'RoleAssignment') {
+    if (gamePhase.kind === 'DayStart') {
+      const round = g.round
+      const events = g.eventLog.filter(e => e.round === round && e.public)
+      const death = events.find(e => e.type === 'night_kill')
+      
+      if (death) {
+        const victim = g.players.find(p => p.id === death.data.playerId)
+        getNarratorResponse(`The village awakens to find ${victim?.name} dead. Announce this death dramatically and ominously in 1-2 sentences.`)
+      } else {
+        getNarratorResponse('Everyone survived the night. Express relief but remind them the danger remains. 1-2 sentences.')
+      }
+    } else if (gamePhase.kind === 'NightStart') {
+      getNarratorResponse('Night falls over the village. Warn them of the dangers ahead. Be ominous. 1-2 sentences.')
+    } else if (gamePhase.kind === 'LynchResolve') {
+      const round = g.round
+      const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
+      if (lynch) {
+        const victim = g.players.find(p => p.id === lynch.data.playerId)
+        const roleDisplay = victim?.role === 'werewolf' ? 'a Werewolf' : 
+                           victim?.role === 'seer' ? 'the Seer' : 
+                           victim?.role === 'medic' ? 'the Medic' : 'a Villager'
+        getNarratorResponse(`${victim?.name} has been eliminated by vote. Reveal that they were ${roleDisplay}. Announce their fate and role dramatically. 1-2 sentences.`)
+      } else {
+        getNarratorResponse('The village could not agree on who to eliminate. Express the tension. 1-2 sentences.')
+      }
+    }
+  }, [gamePhase.kind, g.round, g.eventLog, g.players, getNarratorResponse])
+  
+  // Phase sync monitor - ensures all players stay in sync
+  useEffect(() => {
+    if (phase !== 'playing') return
+    
+    const currentPhase = gamePhase.kind
+    console.log(`[${isHost ? 'HOST' : 'CLIENT'}] Current phase: ${currentPhase}`)
+    
+    // Reset roleRevealed when entering RoleAssignment phase  
+    if (currentPhase === 'RoleAssignment') {
+      console.log(`[${isHost ? 'HOST' : 'CLIENT'}] Entering RoleAssignment - resetting role revealed state`)
       setRoleRevealed(false)
       
       // Reset role tracking on server (host only)
-      if (phase === 'playing' && isHost) {
+      if (isHost) {
         fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -147,12 +221,22 @@ export default function JudgeMode() {
     }
     
     // Reset nightActionSubmitted and peekCompleted when entering NightStart
-    if (g.phase.kind === 'NightStart') {
+    if (currentPhase === 'NightStart') {
+      console.log(`[${isHost ? 'HOST' : 'CLIENT'}] Entering NightStart - resetting night action states`)
       setNightActionSubmitted(false)
       setPeekCompleted(false)
+      setNightRevealed(false)
+      setPeekResult(null)
+    }
+    
+    // Reset skip votes when entering PlayerTalking
+    if (currentPhase === 'PlayerTalking') {
+      console.log(`[${isHost ? 'HOST' : 'CLIENT'}] Entering PlayerTalking - resetting skip votes`)
+      setHasVotedSkip(false)
+      setPlayerTalkingNarrated(false)
       
-      // Reset night tracking on server (host only)
-      if (phase === 'playing' && isHost) {
+      // Reset skip votes tracking on server (host only)
+      if (isHost) {
         fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -160,12 +244,278 @@ export default function JudgeMode() {
             action: 'reset_phase_tracking',
             roomCode,
             deviceId,
-            trackingType: 'night'
+            trackingType: 'skip'
           })
         })
       }
     }
-  }, [g.phase.kind, phase, roomCode, deviceId, isHost])
+    
+    // Reset day reveal states when entering DayStart
+    if (currentPhase === 'DayStart') {
+      console.log(`[${isHost ? 'HOST' : 'CLIENT'}] Entering DayStart - resetting day reveal states`)
+      setDayRevealShown(false)
+      setDayRevealDone(false)
+    }
+    
+    // Play narrator when entering PlayerTalking (host only to avoid duplicate TTS)
+    if (gamePhase.kind === 'PlayerTalking' && !playerTalkingNarrated && isHost) {
+      setPlayerTalkingNarrated(true)
+      ttsSpeak('The village gathers to discuss. Share your suspicions and figure out who the werewolf might be.')
+        .catch(err => console.error('TTS error:', err))
+    }
+  }, [gamePhase.kind, phase, isHost, playerTalkingNarrated, roomCode, deviceId])
+  
+  // Poll for skip votes during PlayerTalking
+  useEffect(() => {
+    if (phase !== 'playing' || gamePhase.kind !== 'PlayerTalking') return
+    
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'get_state',
+            roomCode,
+            deviceId
+          })
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.room) {
+            setSkipVotes(data.room.skipVotes || 0)
+            
+            // Auto-advance if all voted skip and host
+            if (isHost && data.room.allVotedSkip && gamePhase.kind === 'PlayerTalking') {
+              console.log('All players voted to skip! Auto-progressing...')
+              g.startDiscussion()
+              await pushSnapshot(useGame.getState())
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Skip vote polling error (non-fatal):', e)
+      }
+    }, 1000)
+    
+    return () => clearInterval(interval)
+  }, [phase, gamePhase.kind, roomCode, deviceId, isHost])
+  
+  // Auto-mark dead players and villagers as complete (MUST be before early returns)
+  useEffect(() => {
+    if (gamePhase.kind === 'NightStart' && !nightActionSubmitted) {
+      if (!amIAlive || myRole === 'villager') {
+        setNightActionSubmitted(true)
+        fetch('/api/room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'mark_night_action_complete',
+            roomCode,
+            deviceId
+          })
+        })
+      }
+    }
+  }, [gamePhase.kind, nightActionSubmitted, amIAlive, myRole, roomCode, deviceId])
+  
+  // (Removed - consolidated into unified game state polling above)
+  
+  // Auto-advance DayStart and LynchResolve phases after delay (host only)
+  useEffect(() => {
+    if (phase !== 'playing' || !isHost) return
+    
+    let timer: NodeJS.Timeout | undefined
+    
+    if (gamePhase.kind === 'DayStart') {
+      timer = setTimeout(async () => {
+        console.log('DayStart display complete! Auto-progressing to PlayerTalking...')
+        g.startPlayerTalking()
+        await pushSnapshot(useGame.getState())
+      }, 5000) // 5 second delay
+    } else if (gamePhase.kind === 'LynchResolve') {
+      timer = setTimeout(async () => {
+        console.log('LynchResolve display complete! Auto-progressing to next round...')
+        g.continueAfterLynch()
+        await pushSnapshot(useGame.getState())
+      }, 5000) // 5 second delay
+    }
+    
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [phase, isHost, gamePhase.kind])
+
+  // Unified game state polling - ensures perfect sync for all players
+  useEffect(() => {
+    if (phase !== 'playing') return
+    
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_state', roomCode, deviceId })
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          
+          // Non-hosts: Always hydrate from server state
+          if (!isHost && data.success && data.gameState) {
+            const oldPhase = gamePhase.kind
+            const oldRound = gameRound
+            
+            // Log before hydration
+            console.log(`[CLIENT] Pre-hydration phase: ${oldPhase}, round: ${oldRound}`)
+            
+            // Hydrate the state
+            g.hydrateFromHost(data.gameState)
+            
+            // Check the updated state directly
+            const currentState = useGame.getState()
+            const newPhase = currentState.phase.kind
+            const newRound = currentState.round
+            
+            // Log after hydration
+            console.log(`[CLIENT] Post-hydration phase: ${newPhase}, round: ${newRound}`)
+            
+            if (oldPhase !== newPhase) {
+              console.log(`[CLIENT] ✅ Phase transition detected: ${oldPhase} → ${newPhase}`)
+              // Reset phase-specific UI state
+              setRoleRevealed(false)
+              setNightActionSubmitted(false)
+              setPeekCompleted(false)
+              setDayRevealShown(false)
+              setDayRevealDone(false)
+            }
+            if (oldRound !== newRound) {
+              console.log(`[CLIENT] ✅ Round transition detected: ${oldRound} → ${newRound}`)
+            }
+          }
+          
+          // Everyone: Check for synchronized actions
+          if (data.success) {
+            // Check for role reveal completion (host advances game)
+            if (isHost && gamePhase.kind === 'RoleAssignment' && data.allRolesRevealed) {
+              console.log('[HOST] All roles revealed! Advancing to night...')
+              g.proceedFromRoleReveal()
+              await pushSnapshot(useGame.getState())
+            }
+            
+            // Check for night action completion (host advances game)
+            if (isHost && gamePhase.kind === 'NightStart' && data.allNightActionsComplete) {
+              console.log('[HOST] All night actions complete! Resolving night...')
+              
+              // Fetch and apply night actions
+              const actionsResponse = await fetch('/api/room', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'get_night_actions',
+                  roomCode,
+                  deviceId
+                })
+              })
+              
+              if (actionsResponse.ok) {
+                const actionsData = await actionsResponse.json()
+                if (actionsData.success && actionsData.nightActions) {
+                  const { killTargetId, protectId, peekTargetId } = actionsData.nightActions
+                  useGame.setState((s) => ({
+                    nightActions: { killTargetId, protectId, peekTargetId }
+                  }))
+                }
+              }
+              
+              g.resolveNight()
+              await pushSnapshot(useGame.getState())
+            }
+            
+            // Check for discussion timer expiry (host advances game)
+            if (isHost && gamePhase.kind === 'PlayerTalking' && gamePhase.endsAt <= Date.now()) {
+              console.log('[HOST] Discussion time expired! Moving to judge discussion...')
+              g.startDiscussion()
+              await pushSnapshot(useGame.getState())
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Game state polling error:', error)
+      }
+    }, 1000) // Poll every second for responsive gameplay
+    
+    return () => clearInterval(interval)
+  }, [phase, isHost, roomCode, deviceId, gamePhase.kind, gameRound, pushSnapshot])
+  
+  // Create room (host)
+  const createRoom = async () => {
+    if (!playerName.trim()) {
+      return
+    }
+    
+    try {
+      const response = await fetch('/api/room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          playerName: playerName.trim(),
+          deviceId,
+          avatarDataUrl: playerAvatar
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        console.log('✅ Room created:', data.roomCode, 'Host ID:', data.playerId)
+        setRoomCode(data.roomCode)
+        setPlayerId(data.playerId)
+        setIsHost(true)
+        setHostId(data.playerId)
+        setPhase('lobby')
+        setMyPlayerName(playerName.trim())
+      }
+    } catch (error) {
+      console.error('Failed to create room:', error)
+    }
+  }
+  
+  // Join room
+  const joinRoom = async (code: string, name: string) => {
+    if (!name.trim() || !code.trim()) {
+      return
+    }
+    
+    try {
+      const response = await fetch('/api/room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'join',
+          roomCode: code.toUpperCase(),
+          playerName: name.trim(),
+          deviceId,
+          avatarDataUrl: playerAvatar
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        setRoomCode(code.toUpperCase())
+        setIsHost(false)
+        setHostId(data.hostId)
+        setPhase('lobby')
+        setPlayerId(data.playerId)
+        setMyPlayerName(name.trim())
+      }
+    } catch (error) {
+      console.error('Failed to join room:', error)
+    }
+  }
   
   // Poll for room updates
   useEffect(() => {
@@ -208,13 +558,17 @@ export default function JudgeMode() {
             }
             
             // Check if we're the host (in case it transferred)
-            if (data.hostId === playerId) {
-              if (!isHost) {
-                setIsHost(true)
-              }
-            } else {
-              if (isHost) {
-                setIsHost(false)
+            if (playerId && data.hostId) {
+              if (data.hostId === playerId) {
+                if (!isHost) {
+                  console.log('🎩 Setting isHost to TRUE - I am the host!')
+                  setIsHost(true)
+                }
+              } else {
+                if (isHost) {
+                  console.log('👤 Setting isHost to FALSE - Not the host')
+                  setIsHost(false)
+                }
               }
             }
           }
@@ -225,172 +579,8 @@ export default function JudgeMode() {
     }, 2000) // Poll every 2 seconds
     
     return () => clearInterval(interval)
-  }, [phase, roomCode, deviceId, playerId, isHost])
+  }, [phase, roomCode, deviceId, playerId, isHost, gamePhase.kind]) // Added gamePhase.kind for proper re-renders
   
-  // Auto-mark dead players and villagers as complete (MUST be before early returns)
-  useEffect(() => {
-    if (g.phase.kind === 'NightStart' && !nightActionSubmitted) {
-      if (!amIAlive || myRole === 'villager') {
-        setNightActionSubmitted(true)
-        fetch('/api/room', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'mark_night_action_complete',
-            roomCode,
-            deviceId
-          })
-        })
-      }
-    }
-  }, [g.phase.kind, nightActionSubmitted, amIAlive, myRole, roomCode, deviceId])
-  
-  // Poll for phase progression during gameplay (host only)
-  useEffect(() => {
-    if (phase !== 'playing' || !isHost) return
-    
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('/api/room', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_state',
-            roomCode,
-            deviceId
-          })
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success) {
-            // Auto-progress from RoleAssignment when all roles revealed
-            if (g.phase.kind === 'RoleAssignment' && data.allRolesRevealed) {
-              console.log('All roles revealed! Auto-progressing to night...')
-              g.proceedFromRoleReveal()
-              // Push updated host snapshot (fresh state)
-              await pushSnapshot(useGame.getState())
-            }
-            
-            // Auto-progress from NightStart when all actions complete
-            if (g.phase.kind === 'NightStart' && data.allNightActionsComplete) {
-              console.log('All night actions complete! Auto-progressing to day...')
-              g.resolveNight()
-              // Push updated host snapshot (fresh state)
-              await pushSnapshot(useGame.getState())
-            }
-            
-            // Auto-progress from PlayerTalking when timer expires
-            if (g.phase.kind === 'PlayerTalking' && g.phase.endsAt <= Date.now()) {
-              console.log('Player talking time expired! Auto-progressing to judge discussion...')
-              g.startDiscussion()
-              await pushSnapshot(useGame.getState())
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check phase progression:', error)
-      }
-    }, 1000) // Check every second for smooth UX
-    
-    return () => clearInterval(interval)
-  }, [phase, isHost, roomCode, deviceId, g.phase.kind, g])
-
-  // Poll for host state during gameplay (clients hydrate)
-  useEffect(() => {
-    if (phase !== 'playing' || isHost) return
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('/api/room', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'get_state', roomCode, deviceId })
-        })
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success && data.gameState) {
-            g.hydrateFromHost(data.gameState)
-          }
-        }
-      } catch (e) {
-        // no-op
-      }
-    }, 1200)
-    return () => clearInterval(interval)
-  }, [phase, isHost, roomCode, deviceId, g])
-  
-  // Create room (host)
-  const createRoom = async () => {
-    if (!playerName.trim()) {
-      return
-    }
-    
-    try {
-      const response = await fetch('/api/room', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create',
-          playerName: playerName.trim(),
-          deviceId
-        })
-      })
-      
-      const data = await response.json()
-      
-      if (data.success) {
-        setRoomCode(data.roomCode)
-        setPlayerId(data.playerId)
-        setIsHost(data.isHost)
-        setHostId(data.playerId) // Creator is initially the host
-        setRoomPlayers(data.players)
-        setMyPlayerName(playerName.trim())
-        setPhase('lobby')
-      } else {
-        // alert('Failed to create room: ' + (data.error || 'Unknown error'))
-      }
-    } catch (error) {
-      console.error('Create room error:', error)
-      // alert('Failed to create room')
-    }
-  }
-
-  // Join room (non-host)
-  const joinRoom = async () => {
-    if (!playerName.trim() || !inputRoomCode.trim()) {
-      return
-    }
-    
-    try {
-      const response = await fetch('/api/room', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'join',
-          roomCode: inputRoomCode.trim().toUpperCase(),
-          playerName: playerName.trim(),
-          deviceId
-        })
-      })
-      
-      const data = await response.json()
-      
-      if (data.success) {
-        setRoomCode(data.roomCode)
-        setPlayerId(data.playerId)
-        setIsHost(data.isHost)
-        setRoomPlayers(data.players)
-        setMyPlayerName(playerName.trim())
-        setPhase('lobby')
-      } else {
-        // alert('Failed to join room: ' + (data.error || 'Room not found'))
-      }
-    } catch (error) {
-      console.error('Join room error:', error)
-      // alert('Failed to join room')
-    }
-  }
-
   // Leave room
   const leaveRoom = async () => {
     try {
@@ -415,7 +605,7 @@ export default function JudgeMode() {
 
   // Start game (host only)
   const startGame = async () => {
-    if (roomPlayers.length < 5) {
+    if (roomPlayers.length < 3) {
       return
     }
     
@@ -440,7 +630,8 @@ export default function JudgeMode() {
       
       // Clear and sync all players from server to game state (single atomic set)
       g.reset()
-      g.setPlayersFromNames(roomPlayers.map(p => p.name))
+      // Add players with their avatars
+      roomPlayers.forEach(p => g.addPlayer(p.name, p.avatarDataUrl))
       
       // Deterministic role assignment across devices using a shared seed
       const sharedSeed = Date.now()
@@ -508,7 +699,7 @@ export default function JudgeMode() {
     
     try {
       const gameContext = {
-        phase: g.phase,
+        phase: gamePhase,
         round: g.round,
         alivePlayers: g.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name })),
         speaker: myPlayerName
@@ -567,7 +758,47 @@ export default function JudgeMode() {
                 placeholder="Enter your name"
                 className="w-full glass-strong rounded-lg px-4 py-3 outline-none text-white"
                 maxLength={20}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && playerName.trim()) {
+                    createRoom()
+                  }
+                }}
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Profile Picture (Optional)</label>
+              <input 
+                ref={fileRef}
+                type="file" 
+                accept="image/*" 
+                capture="user" 
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  const r = new FileReader()
+                  r.onload = () => setPlayerAvatar(String(r.result))
+                  r.readAsDataURL(f)
+                }} 
+                className="w-full text-sm text-gray-300"
+              />
+              {playerAvatar && (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-purple-500 to-pink-500">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={playerAvatar} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setPlayerAvatar(undefined)
+                      if (fileRef.current) fileRef.current.value = ''
+                    }}
+                    className="text-xs text-red-400 hover:text-red-300"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -598,7 +829,7 @@ export default function JudgeMode() {
               />
 
               <Button
-                onClick={joinRoom}
+                onClick={() => joinRoom(inputRoomCode, playerName)}
                 className="w-full bg-gradient-to-r from-purple-600 to-purple-800 text-white"
                 disabled={!playerName.trim() || !inputRoomCode.trim()}
               >
@@ -633,11 +864,24 @@ export default function JudgeMode() {
               <div className="text-sm font-bold">Players ({roomPlayers.length})</div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {roomPlayers.map((p) => (
-                  <div key={p.id} className="glass rounded-lg p-3 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                    <div className="flex-1">
-                      {p.name} {p.id === playerId && '(You)'}
-                      {p.id === hostId && <span className="ml-2 text-xs px-2 py-0.5 bg-red-500/80 rounded">HOST</span>}
+                  <div key={p.id} className="glass rounded-lg p-3 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center flex-shrink-0">
+                      {p.avatarDataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-xl">🙂</div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">
+                        {p.name} {p.id === playerId && '(You)'}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                        <span className="text-xs text-gray-400">Online</span>
+                        {p.id === hostId && <span className="text-xs px-2 py-0.5 bg-red-500/80 rounded">HOST</span>}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -698,9 +942,9 @@ export default function JudgeMode() {
                 <Button
                   onClick={startGame}
                   className="w-full bg-gradient-to-r from-red-600 to-red-800 text-white"
-                  disabled={roomPlayers.length < 5}
+                  disabled={roomPlayers.length < 3}
                 >
-                  Start Game ({roomPlayers.length}/5+)
+                  Start Game ({roomPlayers.length}/3+)
                 </Button>
               </>
             )}
@@ -719,15 +963,24 @@ export default function JudgeMode() {
   }
 
   // ===== ROLE ASSIGNMENT - Each device sees only their role =====
-  if (g.phase.kind === 'RoleAssignment') {
+  if (gamePhase.kind === 'RoleAssignment') {
     if (!roleRevealed) {
       return (
         <main className="min-h-screen p-6 flex items-center justify-center">
           <div className="max-w-md w-full space-y-6">
             <h1 className="text-3xl font-bold text-center" style={GAME_TITLE_STYLE}>Role Assignment</h1>
             <div className="glass-strong rounded-3xl p-8 space-y-6 text-center">
-              <div className="text-5xl">🎭</div>
-              <div className="text-2xl font-bold">{myPlayerName}</div>
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                  {myPlayer?.avatarDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={myPlayer.avatarDataUrl} alt={myPlayerName} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-5xl">🙂</div>
+                  )}
+                </div>
+                <div className="text-2xl font-bold">{myPlayerName}</div>
+              </div>
               <div className="text-sm opacity-70">Tap below to reveal your secret role</div>
               <Button 
                 className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white"
@@ -759,6 +1012,17 @@ export default function JudgeMode() {
         <div className="max-w-md w-full space-y-6">
           <h1 className="text-3xl font-bold text-center" style={GAME_TITLE_STYLE}>Your Role</h1>
           <div className="glass-strong rounded-3xl p-8 space-y-6 text-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                {myPlayer?.avatarDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={myPlayer.avatarDataUrl} alt={myPlayerName} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-5xl">🙂</div>
+                )}
+              </div>
+              <div className="text-2xl font-bold">{myPlayerName}</div>
+            </div>
             <div className="text-7xl mb-4">
               {myRole === 'werewolf' ? '🐺' : myRole === 'seer' ? '🔮' : myRole === 'medic' ? '💉' : '🧑'}
             </div>
@@ -771,8 +1035,8 @@ export default function JudgeMode() {
               {myRole === 'medic' && <div>Protect one player from elimination each night.</div>}
               {myRole === 'villager' && <div>Help identify and eliminate werewolves through discussion.</div>}
             </div>
-            <div className="text-xs opacity-50 mt-6 p-4 glass rounded-lg">
-              Remember your role! Game will automatically continue when everyone is ready.
+            <div className="text-sm opacity-70 mt-6 text-center">
+              ✓ Ready! Waiting for all players...
             </div>
           </div>
         </div>
@@ -781,7 +1045,7 @@ export default function JudgeMode() {
   }
 
   // ===== NIGHT START - Each player takes their action =====
-  if (g.phase.kind === 'NightStart') {
+  if (gamePhase.kind === 'NightStart') {
     const alive = g.players.filter(p => p.alive)
     
     // If I'm not alive, auto-mark as complete and show waiting screen
@@ -838,6 +1102,20 @@ export default function JudgeMode() {
                     onClick={async () => {
                       g.chooseKill(p.id)
                       
+                      // Submit night action to server
+                      await fetch('/api/room', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          action: 'submit_night_action',
+                          roomCode,
+                          deviceId,
+                          role: 'werewolf',
+                          nightAction: 'kill',
+                          targetId: p.id
+                        })
+                      })
+                      
                       // Mark night action complete
                       await fetch('/api/room', {
                         method: 'POST',
@@ -893,6 +1171,20 @@ export default function JudgeMode() {
                     <Button 
                       className="w-full mt-4"
                       onClick={async () => {
+                        // Submit night action to server
+                        await fetch('/api/room', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            action: 'submit_night_action',
+                            roomCode,
+                            deviceId,
+                            role: 'seer',
+                            nightAction: 'peek',
+                            targetId: g.nightActions.peekTargetId
+                          })
+                        })
+                        
                         setPeekResult(null)
                         
                         // Mark night action complete
@@ -963,6 +1255,20 @@ export default function JudgeMode() {
                         onClick={async () => {
                           g.chooseProtect(p.id)
                           
+                          // Submit night action to server
+                          await fetch('/api/room', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              action: 'submit_night_action',
+                              roomCode,
+                              deviceId,
+                              role: 'medic',
+                              nightAction: 'protect',
+                              targetId: p.id
+                            })
+                          })
+                          
                           // Mark night action complete
                           await fetch('/api/room', {
                             method: 'POST',
@@ -1008,7 +1314,7 @@ export default function JudgeMode() {
   }
 
   // ===== DAY START - Show who died =====
-  if (g.phase.kind === 'DayStart') {
+  if (gamePhase.kind === 'DayStart') {
     const round = g.round
     const events = g.eventLog.filter(e => e.round === round && e.public)
     const death = events.find(e => e.type === 'night_kill')
@@ -1057,8 +1363,8 @@ export default function JudgeMode() {
   }
 
   // ===== PLAYER TALKING - Players discuss among themselves =====
-  if (g.phase.kind === 'PlayerTalking') {
-    const endsAt = g.phase.endsAt
+  if (gamePhase.kind === 'PlayerTalking') {
+    const endsAt = gamePhase.endsAt
     const remain = Math.max(0, Math.round((endsAt - now) / 1000))
     const alivePlayers = g.players.filter(p => p.alive)
     
@@ -1083,7 +1389,7 @@ export default function JudgeMode() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
               {alivePlayers.map(p => (
                 <div key={p.id} className="glass rounded-lg p-3 text-center">
-                  <div className="text-2xl mb-1">{p.role === 'werewolf' ? '🐺' : '🧑'}</div>
+                  <div className="text-2xl mb-1">🧑</div>
                   <div className="font-medium">{p.name}</div>
                   {p.name === myPlayerName && <div className="text-xs text-blue-400 mt-1">(You)</div>}
                 </div>
@@ -1096,6 +1402,39 @@ export default function JudgeMode() {
                 'Advancing to Judge phase...'
               }
             </div>
+            
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <Button
+                onClick={async () => {
+                  if (hasVotedSkip) return
+                  
+                  setHasVotedSkip(true)
+                  const response = await fetch('/api/room', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'vote_skip',
+                      roomCode,
+                      deviceId
+                    })
+                  })
+                  
+                  if (response.ok) {
+                    const data = await response.json()
+                    if (data.success) {
+                      setSkipVotes(data.skipVotes)
+                    }
+                  }
+                }}
+                disabled={hasVotedSkip}
+                className={`${hasVotedSkip ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {hasVotedSkip ? '✓ Ready to Continue' : 'Ready to Continue'}
+              </Button>
+              <div className="text-sm opacity-70">
+                {skipVotes}/{alivePlayers.length} players ready
+              </div>
+            </div>
           </div>
         </div>
       </main>
@@ -1103,8 +1442,8 @@ export default function JudgeMode() {
   }
 
   // ===== DISCUSSION - Talk to Judge =====
-  if (g.phase.kind === 'Discussion') {
-    const endsAt = g.phase.endsAt || 0
+  if (gamePhase.kind === 'Discussion') {
+    const endsAt = gamePhase.endsAt || 0
     const remain = Math.max(0, Math.round((endsAt - now) / 1000))
     const alivePlayers = g.players.filter(p => p.alive)
     
@@ -1197,7 +1536,7 @@ export default function JudgeMode() {
       const alivePlayers = g.players.filter(p => p.alive)
       
       const gameContext = {
-        phase: g.phase,
+        phase: gamePhase,
         round: g.round,
         alivePlayers: alivePlayers.map(p => ({ id: p.id, name: p.name })),
         recentEvents: g.eventLog.slice(-5)
@@ -1219,8 +1558,8 @@ export default function JudgeMode() {
       // Parse decision
       if (decision.toUpperCase().includes('ABSTAIN')) {
         // Judge abstains - simulate abstain vote
-        if (g.phase.kind === 'Voting') {
-          for (let i = 0; i < g.phase.voterQueue.length; i++) {
+        if (gamePhase.kind === 'Voting') {
+          for (let i = 0; i < gamePhase.voterQueue.length; i++) {
             g.castVoteForCurrent(null)
           }
         }
@@ -1230,15 +1569,15 @@ export default function JudgeMode() {
           decision.toLowerCase().includes(p.name.toLowerCase())
         )
         
-        if (targetPlayer && g.phase.kind === 'Voting') {
+        if (targetPlayer && gamePhase.kind === 'Voting') {
           // Cast all votes for this player
-          for (let i = 0; i < g.phase.voterQueue.length; i++) {
+          for (let i = 0; i < gamePhase.voterQueue.length; i++) {
             g.castVoteForCurrent(targetPlayer.id)
           }
         } else {
           // Default to abstain if can't parse
-          if (g.phase.kind === 'Voting') {
-            for (let i = 0; i < g.phase.voterQueue.length; i++) {
+          if (gamePhase.kind === 'Voting') {
+            for (let i = 0; i < gamePhase.voterQueue.length; i++) {
               g.castVoteForCurrent(null)
             }
           }
@@ -1251,8 +1590,8 @@ export default function JudgeMode() {
     } catch (error) {
       console.error('Judge decision error:', error)
       // Default to abstain on error
-      if (g.phase.kind === 'Voting') {
-        const firstVoter = Object.keys(g.phase.votes)[0]
+      if (gamePhase.kind === 'Voting') {
+        const firstVoter = Object.keys(gamePhase.votes)[0]
         if (firstVoter) {
           g.castVoteForCurrent(null)
         }
@@ -1263,7 +1602,7 @@ export default function JudgeMode() {
   }
 
   // ===== VOTING - Judge Decides (AI) =====
-  if (g.phase.kind === 'Voting') {
+  if (gamePhase.kind === 'Voting') {
     return (
       <main className="min-h-screen p-6 flex items-center justify-center">
         <div className="max-w-md w-full space-y-6">
@@ -1283,7 +1622,7 @@ export default function JudgeMode() {
   }
 
   // ===== LYNCH RESOLVE - Show Judge's decision =====
-  if (g.phase.kind === 'LynchResolve') {
+  if (gamePhase.kind === 'LynchResolve') {
     const round = g.round
     const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
     const victim = g.players.find(p => p.id === lynch?.data.playerId)
@@ -1328,7 +1667,7 @@ export default function JudgeMode() {
   }
 
   // ===== GAME OVER =====
-  if (g.phase.kind === 'GameOver') {
+  if (gamePhase.kind === 'GameOver') {
     return (
       <main className="min-h-screen p-6 flex items-center justify-center">
         <div className="max-w-md w-full space-y-6">
@@ -1336,10 +1675,10 @@ export default function JudgeMode() {
           
           <div className="glass-strong rounded-3xl p-8 space-y-6 text-center">
             <div className="text-6xl">
-              {g.phase.winners === 'town' ? '👥' : '🐺'}
+              {gamePhase.winners === 'town' ? '👥' : '🐺'}
             </div>
             <div className="text-3xl font-bold">
-              {g.phase.winners === 'town' ? 'Villagers Win!' : 'Werewolves Win!'}
+              {gamePhase.winners === 'town' ? 'Villagers Win!' : 'Werewolves Win!'}
             </div>
             
             <div className="h-px bg-white/20 my-4"></div>
@@ -1381,7 +1720,7 @@ export default function JudgeMode() {
   }
 
   // Default/fallback - Loading or unknown phase
-  if (phase === 'playing' && g.phase.kind === 'Lobby') {
+  if (phase === 'playing' && gamePhase.kind === 'Lobby') {
     // Still loading/hydrating
     return (
       <main className="min-h-screen p-6 flex items-center justify-center">
@@ -1397,15 +1736,46 @@ export default function JudgeMode() {
   }
   
   return (
-    <main className="min-h-screen p-6 flex items-center justify-center">
-      <div className="max-w-md w-full">
-        <div className="glass-strong rounded-3xl p-8 text-center">
-          <div className="text-xl">Unknown phase: {g.phase.kind}</div>
-          {isHost && (
-            <Button className="w-full mt-4" onClick={leaveRoom}>Leave Game</Button>
-          )}
+    <>
+      <main className="min-h-screen p-6 flex items-center justify-center">
+        <div className="max-w-md w-full">
+          <div className="glass-strong rounded-3xl p-8 text-center">
+            <div className="text-xl">Unknown phase: {gamePhase.kind}</div>
+            {isHost && (
+              <Button className="w-full mt-4" onClick={leaveRoom}>Leave Game</Button>
+            )}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+      
+      {/* Narrator/Host Response Display */}
+      {hostResponse && (
+        <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto glass-strong rounded-2xl p-4 animate-fadeIn z-50">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">🎭</div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-bold gradient-text">Narrator</span>
+                {hostProvider && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${hostProvider === 'janitorai-error' ? 'bg-red-500/30 text-red-300' : 'bg-purple-500/30 text-purple-300'}`}>
+                    {hostProvider === 'baseten' ? '🤖' : 
+                     hostProvider === 'janitorai' ? '🎭' : 
+                     hostProvider === 'janitorai-error' ? '❌' :
+                     hostProvider === 'mock' ? '📝' : '⚠️'}
+                  </span>
+                )}
+              </div>
+              <p className="text-white text-sm leading-relaxed">{hostResponse}</p>
+            </div>
+            <button 
+              onClick={() => setHostResponse('')}
+              className="text-gray-400 hover:text-white text-xl leading-none transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
