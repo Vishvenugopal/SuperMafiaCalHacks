@@ -1,0 +1,17 @@
+Raw:
+data: {"choices":[{"delta":{"content":""}}]}
+
+data: {"choices":[{"delta":{"content":"Hello"}}]}
+
+data: {"choices":[{"delta":{"content":"! How"}}]}
+
+data: {"choices":[{"delta":{"content":" can I assist"}}]}
+
+data: {"choices":[{"delta":{"content":" you today?"}}]}
+
+
+data: [DONE]
+
+
+
+Time: 2025-10-26T00:17:36.922Z

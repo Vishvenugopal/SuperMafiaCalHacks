@@ -76,8 +76,8 @@ export default function Home() {
   const timerCheckedRef = useRef(false)
   const kbHoldingRef = useRef(false)
 
-  // Helper function to get narrator response
-  const getNarratorResponse = async (prompt: string) => {
+  // Helper function to get narrator response (wrapped in useCallback to capture current settings)
+  const getNarratorResponse = useCallback(async (prompt: string) => {
     try {
       const gameContext = {
         phase: g.phase,
@@ -88,10 +88,11 @@ export default function Home() {
         recentEvents: g.eventLog.slice(-3)
       }
       
+      console.log('[Frontend] Sending narrator request with provider:', g.settings.aiProvider)
       const res = await fetch('/api/host', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ question: prompt, gameContext }) 
+        body: JSON.stringify({ question: prompt, gameContext, provider: g.settings.aiProvider }) 
       })
       const data = await res.json()
       const answer = String(data.answer || '')
@@ -101,7 +102,7 @@ export default function Home() {
     } catch (error) {
       console.error('Narrator error:', error)
     }
-  }
+  }, [g.phase, g.round, g.players, g.eventLog, g.settings.aiProvider])
 
   // Handle final transcript -> call host (wrapped in useCallback to prevent stale closures)
   const handleFinalTranscript = useCallback(async (finalText: string | null) => {
@@ -119,10 +120,11 @@ export default function Home() {
         totalPlayers: g.players.length,
         recentEvents: g.eventLog.slice(-3)
       }
+      console.log('[Frontend] Sending user question with provider:', g.settings.aiProvider)
       const res = await fetch('/api/host', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, gameContext })
+        body: JSON.stringify({ question: q, gameContext, provider: g.settings.aiProvider })
       })
       const data = await res.json()
       const answer = String(data.answer || '')
@@ -135,9 +137,9 @@ export default function Home() {
       setHostProvider('error')
       await ttsSpeak(errorMsg)
     }
-  }, [g.phase, g.round, g.players, g.eventLog])
+  }, [g.phase, g.round, g.players, g.eventLog, g.settings.aiProvider])
 
-  // Keyboard hold-to-talk (Space or V)
+  // Keyboard tap-to-talk (Space or V) - toggle on/off
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
@@ -145,21 +147,30 @@ export default function Home() {
       // avoid when typing in inputs/textareas/contentEditable
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
-      if (kbHoldingRef.current) return
+      if (kbHoldingRef.current) return // Prevent multiple key events
       e.preventDefault() // Prevent space from scrolling page
       kbHoldingRef.current = true
-      setUserTranscript('')
-      const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
-        handleFinalTranscript(finalText)
-      })
-      if (ok) setListening(true)
     }
     const onKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
       if ((key === ' ' || key === 'v') && kbHoldingRef.current) {
         e.preventDefault()
         kbHoldingRef.current = false
-        stopSttStream(true)
+        
+        // Toggle listening state
+        if (listening) {
+          // Stop listening
+          stopSttStream(true)
+          setListening(false)
+        } else {
+          // Start listening
+          setUserTranscript('')
+          const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
+            handleFinalTranscript(finalText)
+            setListening(false)
+          })
+          if (ok) setListening(true)
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -168,7 +179,7 @@ export default function Home() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [handleFinalTranscript])
+  }, [handleFinalTranscript, listening])
 
   // Auto-progress when discussion timer hits 0
   useEffect(() => {
@@ -187,7 +198,7 @@ export default function Home() {
         timerCheckedRef.current = false
       }
     }
-  }, [g.phase, now])
+  }, [g.phase, now, getNarratorResponse])
 
   // Narrator announcements for phase changes
   useEffect(() => {
@@ -213,7 +224,7 @@ export default function Home() {
         getNarratorResponse('The village could not agree on who to eliminate. Express the tension. 1-2 sentences.')
       }
     }
-  }, [g.phase, g.round, g.eventLog])
+  }, [g.phase, g.round, g.eventLog, g.players, getNarratorResponse])
 
   const addPlayer = () => {
     if (!newName.trim()) return
@@ -274,6 +285,14 @@ export default function Home() {
             <option value="spooky">Spooky</option>
             <option value="dramatic">Dramatic</option>
           </select>
+          <div className="space-y-1">
+            <label className="text-sm opacity-70">AI Provider</label>
+            <select value={g.settings.aiProvider} onChange={e => g.updateSettings({ aiProvider: e.target.value as any })} className="w-full bg-white/10 rounded px-3 py-2">
+              <option value="auto">Auto (Try Baseten, then JanitorAI)</option>
+              <option value="baseten">Baseten</option>
+              <option value="janitorai">JanitorAI</option>
+            </select>
+          </div>
         </Section>
         <div className="pt-2">
           <Button className="w-full disabled:opacity-50" onClick={g.startGame} disabled={g.players.length < 5}>Start Game</Button>
@@ -285,9 +304,9 @@ export default function Home() {
   // All state at parent level to prevent focus loss
   const [roleRevealed, setRoleRevealed] = useState(false)
   const [lastRevealedIndex, setLastRevealedIndex] = useState(-1)
-  const [nightStep, setNightStep] = useState<'medic' | 'wolves' | 'seer' | 'done'>('medic')
+  const [nightPlayerIndex, setNightPlayerIndex] = useState(0)
   const [nightRevealed, setNightRevealed] = useState(false)
-  const [lastNightStep, setLastNightStep] = useState<string>('')
+  const [lastNightPlayerIndex, setLastNightPlayerIndex] = useState(-1)
   const [peekResult, setPeekResult] = useState<{ playerId: string; role: string } | null>(null)
 
   // Reset revealed state when moving to next player
@@ -296,33 +315,20 @@ export default function Home() {
     setLastRevealedIndex(g.ui.roleRevealIndex)
   }
 
-  // Reset night revealed state when step changes
-  if (g.phase.kind === 'NightStart' && nightStep !== lastNightStep) {
+  // Reset night revealed state when player changes
+  if (g.phase.kind === 'NightStart' && nightPlayerIndex !== lastNightPlayerIndex) {
     if (nightRevealed) setNightRevealed(false)
-    setLastNightStep(nightStep)
+    setLastNightPlayerIndex(nightPlayerIndex)
   }
 
-  // Reset night step when phase changes
+  // Reset night index when phase changes
   useEffect(() => {
     if (g.phase.kind === 'NightStart') {
-      setNightStep('medic')
+      setNightPlayerIndex(0)
       setNightRevealed(false)
       setPeekResult(null)
     }
   }, [g.phase.kind])
-
-  // Auto-advance through missing roles in night phase
-  useEffect(() => {
-    if (g.phase.kind !== 'NightStart') return
-    const medic = g.players.find(p => p.role === 'medic' && p.alive)
-    const seer = g.players.find(p => p.role === 'seer' && p.alive)
-    const wolves = g.players.filter(p => p.role === 'werewolf' && p.alive)
-    
-    if (nightStep === 'done') return
-    if (nightStep === 'medic' && !medic) setNightStep('wolves')
-    if (nightStep === 'wolves' && wolves.length === 0) setNightStep('seer')
-    if (nightStep === 'seer' && !seer) setNightStep('done')
-  }, [g.phase.kind, nightStep, g.players])
 
   const renderRoleAssignment = () => {
     const id = g.ui.roleRevealOrder[g.ui.roleRevealIndex]
@@ -352,110 +358,11 @@ export default function Home() {
   }
 
   const renderNightStart = () => {
-    const medic = g.players.find(p => p.role === 'medic' && p.alive)
-    const seer = g.players.find(p => p.role === 'seer' && p.alive)
-    const wolves = g.players.filter(p => p.role === 'werewolf' && p.alive)
     const alive = g.players.filter(p => p.alive)
-
-    if (nightStep === 'medic' && medic) {
-      return (
-        <div className="space-y-4">
-          {!nightRevealed ? (
-            <>
-              <div className="text-center text-2xl">Pass to {medic.name}</div>
-              <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your action</Button>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <div className="text-center text-xl">💉 Medic</div>
-              <div className="text-center">Choose a player to protect</div>
-              <div className="grid grid-cols-2 gap-2">
-                {alive.map(p => (
-                  <button key={p.id} onClick={() => { g.chooseProtect(p.id); setNightStep('wolves'); setNightRevealed(false) }} className="bg-white/10 rounded-xl p-3">
-                    <div className="text-center">{p.name}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    if (nightStep === 'wolves') {
-      const wolfNames = wolves.map(w => w.name).join(', ')
-      const targets = alive.filter(p => p.role !== 'werewolf')
-      return (
-        <div className="space-y-4">
-          {!nightRevealed ? (
-            <>
-              <div className="text-center text-2xl">Pass to {wolfNames}</div>
-              <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your action</Button>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <div className="text-center text-xl">🐺 Werewolf</div>
-              <div className="text-center">Choose a player to eliminate</div>
-              <div className="grid grid-cols-2 gap-2">
-                {targets.map(p => (
-                  <button key={p.id} onClick={() => { g.chooseKill(p.id); setNightStep('seer'); setNightRevealed(false) }} className="bg-white/10 rounded-xl p-3">
-                    <div className="text-center">{p.name}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    if (nightStep === 'seer' && seer) {
-      const targets = alive.filter(p => p.id !== seer.id)
-      
-      if (peekResult) {
-        const peekedPlayer = g.players.find(p => p.id === peekResult.playerId)
-        const roleDisplay = peekResult.role === 'werewolf' ? '🐺 Werewolf' : 
-                           peekResult.role === 'seer' ? '🔮 Seer' : 
-                           peekResult.role === 'medic' ? '💉 Medic' : '🧑 Villager'
-        return (
-          <div className="space-y-4">
-            <div className="text-center text-xl">🔮 Seer Vision</div>
-            <div className="text-center text-2xl">{peekedPlayer?.name}</div>
-            <div className="text-center text-3xl">{roleDisplay}</div>
-            <Button className="w-full" onClick={() => { setNightStep('done'); setNightRevealed(false); setPeekResult(null) }}>Continue</Button>
-          </div>
-        )
-      }
-      
-      return (
-        <div className="space-y-4">
-          {!nightRevealed ? (
-            <>
-              <div className="text-center text-2xl">Pass to {seer.name}</div>
-              <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your action</Button>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <div className="text-center text-xl">🔮 Seer</div>
-              <div className="text-center">Choose a player to peek</div>
-              <div className="grid grid-cols-2 gap-2">
-                {targets.map(p => (
-                  <button key={p.id} onClick={() => { 
-                    g.choosePeek(p.id)
-                    const role = p.role || 'villager'
-                    setPeekResult({ playerId: p.id, role })
-                  }} className="bg-white/10 rounded-xl p-3">
-                    <div className="text-center">{p.name}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    if (nightStep === 'done') {
+    const wolves = alive.filter(p => p.role === 'werewolf')
+    
+    // If we've gone through all players, show completion
+    if (nightPlayerIndex >= alive.length) {
       return (
         <div className="space-y-4">
           <div className="text-center text-2xl">Night actions complete</div>
@@ -463,8 +370,107 @@ export default function Home() {
         </div>
       )
     }
-
-    return null
+    
+    const currentPlayer = alive[nightPlayerIndex]
+    const role = currentPlayer.role
+    
+    // Seer peek result display
+    if (peekResult) {
+      const peekedPlayer = g.players.find(p => p.id === peekResult.playerId)
+      const roleDisplay = peekResult.role === 'werewolf' ? '🐺 Werewolf' : 
+                         peekResult.role === 'seer' ? '🔮 Seer' : 
+                         peekResult.role === 'medic' ? '💉 Medic' : '🧑 Villager'
+      return (
+        <div className="space-y-4">
+          <div className="text-center text-xl">🔮 Seer Vision</div>
+          <div className="text-center text-2xl">{peekedPlayer?.name}</div>
+          <div className="text-center text-3xl">{roleDisplay}</div>
+          <Button className="w-full" onClick={() => { 
+            setNightPlayerIndex(nightPlayerIndex + 1)
+            setNightRevealed(false)
+            setPeekResult(null)
+          }}>Continue</Button>
+        </div>
+      )
+    }
+    
+    return (
+      <div className="space-y-4">
+        {!nightRevealed ? (
+          <>
+            <div className="text-center text-2xl">Pass to {currentPlayer.name}</div>
+            <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your role</Button>
+          </>
+        ) : (
+          <>
+            {role === 'medic' ? (
+              <div className="space-y-3">
+                <div className="text-center text-xl">💉 Medic</div>
+                <div className="text-center">Choose a player to protect</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {alive.map(p => (
+                    <button key={p.id} onClick={() => { 
+                      g.chooseProtect(p.id)
+                      setNightPlayerIndex(nightPlayerIndex + 1)
+                      setNightRevealed(false)
+                    }} className="bg-white/10 rounded-xl p-3">
+                      <div className="text-center">{p.name}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : role === 'werewolf' ? (
+              <div className="space-y-3">
+                <div className="text-center text-xl">🐺 Werewolf</div>
+                <div className="text-center">Choose a player to eliminate</div>
+                <div className="text-center text-xs opacity-60 mb-2">Other wolves: {wolves.filter(w => w.id !== currentPlayer.id).map(w => w.name).join(', ') || 'none'}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {alive.filter(p => p.role !== 'werewolf').map(p => (
+                    <button key={p.id} onClick={() => { 
+                      g.chooseKill(p.id)
+                      // Skip to next non-werewolf or end
+                      let nextIdx = nightPlayerIndex + 1
+                      while (nextIdx < alive.length && alive[nextIdx].role === 'werewolf') {
+                        nextIdx++
+                      }
+                      setNightPlayerIndex(nextIdx)
+                      setNightRevealed(false)
+                    }} className="bg-white/10 rounded-xl p-3">
+                      <div className="text-center">{p.name}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : role === 'seer' ? (
+              <div className="space-y-3">
+                <div className="text-center text-xl">🔮 Seer</div>
+                <div className="text-center">Choose a player to peek</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {alive.filter(p => p.id !== currentPlayer.id).map(p => (
+                    <button key={p.id} onClick={() => { 
+                      g.choosePeek(p.id)
+                      const targetRole = p.role || 'villager'
+                      setPeekResult({ playerId: p.id, role: targetRole })
+                    }} className="bg-white/10 rounded-xl p-3">
+                      <div className="text-center">{p.name}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-center text-xl">🧑 Villager</div>
+                <div className="text-center">You have no special actions at night</div>
+                <Button className="w-full" onClick={() => { 
+                  setNightPlayerIndex(nightPlayerIndex + 1)
+                  setNightRevealed(false)
+                }}>Continue</Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )
   }
 
   const renderDayStart = () => {
@@ -552,37 +558,33 @@ export default function Home() {
           </div>
         </div>
         
-        {/* Hold-to-talk controls */}
+        {/* Tap-to-talk controls */}
         <div className="flex flex-col items-center gap-3">
-          <div
-            role="button"
-            aria-label={listening ? 'Release to stop talking' : 'Hold to talk'}
-            className={`w-24 h-24 rounded-full flex items-center justify-center select-none ${listening ? 'bg-red-500 animate-pulse' : 'bg-white text-black'} shadow-lg active:scale-95`}
-            onMouseDown={() => {
-              setUserTranscript('')
-              const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
-                handleFinalTranscript(finalText)
-              })
-              if (ok) setListening(true)
+          <button
+            onClick={() => {
+              if (listening) {
+                // Stop listening
+                stopSttStream(true)
+                setListening(false)
+              } else {
+                // Start listening
+                setUserTranscript('')
+                const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
+                  handleFinalTranscript(finalText)
+                  setListening(false)
+                })
+                if (ok) setListening(true)
+              }
             }}
-            onMouseUp={() => stopSttStream(true)}
-            onMouseLeave={() => listening && stopSttStream(true)}
-            onTouchStart={() => {
-              setUserTranscript('')
-              const ok = startSttStream((partial) => setUserTranscript(partial), (finalText) => {
-                handleFinalTranscript(finalText)
-              })
-              if (ok) setListening(true)
-            }}
-            onTouchEnd={() => stopSttStream(true)}
+            className={`w-24 h-24 rounded-full flex items-center justify-center select-none ${listening ? 'bg-red-500 animate-pulse' : 'bg-white text-black'} shadow-lg active:scale-95 transition-all`}
           >
             <span className="text-3xl">🎙️</span>
-          </div>
-          <div className="text-xs opacity-70">Hold Space or V to talk</div>
+          </button>
+          <div className="text-xs opacity-70">{listening ? '🔴 Listening... (Tap to stop)' : 'Tap mic or press Space/V to talk'}</div>
           {/* Live transcript */}
           <div className="w-full">
             <div className={`min-h-[48px] px-3 py-2 rounded-lg border ${listening ? 'border-red-400 bg-red-950/30' : 'border-white/20 bg-white/5'}`}>
-              <div className="text-sm whitespace-pre-wrap break-words">{userTranscript || (listening ? 'Listening…' : 'Tap and hold the mic to ask the host') }</div>
+              <div className="text-sm whitespace-pre-wrap break-words">{userTranscript || (listening ? 'Listening…' : 'Tap the mic to ask the host') }</div>
             </div>
           </div>
           <div className="flex gap-2 w-full">
@@ -686,9 +688,10 @@ export default function Home() {
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-bold text-purple-400">Host Response</span>
                 {hostProvider && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-purple-900 text-purple-300">
+                  <span className={`text-xs px-2 py-0.5 rounded ${hostProvider === 'janitorai-error' ? 'bg-red-900 text-red-300' : 'bg-purple-900 text-purple-300'}`}>
                     {hostProvider === 'baseten' ? '🤖 Baseten' : 
                      hostProvider === 'janitorai' ? '🎭 Janitor.ai' : 
+                     hostProvider === 'janitorai-error' ? '❌ JanitorAI Error' :
                      hostProvider === 'mock' ? '📝 Mock' : '⚠️ Error'}
                   </span>
                 )}

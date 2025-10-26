@@ -91,38 +91,116 @@ async function callBaseten(question: string, gameContext?: any): Promise<string>
 
 async function callJanitorAI(question: string, gameContext?: any): Promise<string> {
   const apiKey = process.env.JANITOR_AI_API_KEY
-  const characterId = process.env.JANITOR_AI_CHARACTER_ID
   
-  if (!apiKey || !characterId) {
-    throw new Error('JanitorAI credentials not configured')
+  if (!apiKey) {
+    throw new Error('JanitorAI API key not configured')
   }
 
-  console.log('Calling Janitor.ai API with character:', characterId)
+  console.log('Calling JanitorAI hackathon endpoint...')
   
-  const response = await fetch('https://janitorai.com/api/v1/chat', {
+  // Build the system prompt with game context
+  const systemPrompt = "You are an English-speaking game narrator and host for a Werewolf/Mafia game. Always reply in English, even if the question is in another language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions."
+  const userPrompt = gameContext 
+    ? `Current Game State:\n${JSON.stringify(gameContext, null, 2)}\n\nPlayer Question: ${question}\n\nProvide a brief, direct answer in English (1-2 sentences only).`
+    : question
+  
+  // Use the hackathon endpoint with OpenAI-style format
+  const response = await fetch('https://janitorai.com/hackathon/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'Accept': 'application/json',
+      'Authorization': apiKey  // No Bearer prefix per JanitorAI staff
     },
     body: JSON.stringify({
-      character_id: characterId,
-      message: question,
-      context: gameContext ? `Game context: ${JSON.stringify(gameContext)}` : undefined
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 80,
+      temperature: 0.8,
+      stream: false  // Disable streaming to get JSON response
     })
   })
 
-  console.log('Janitor.ai response status:', response.status)
+  console.log('JanitorAI response status:', response.status)
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error('Janitor.ai error response:', errorText)
+    console.error('JanitorAI error response:', errorText)
+    
+    // Write error to file
+    try {
+      const fs = await import('fs/promises')
+      await fs.writeFile('janitorai-error.txt', `Status: ${response.status}\n\nError:\n${errorText}\n\nTime: ${new Date().toISOString()}`, 'utf-8')
+    } catch (e) {
+      console.error('Could not write error file:', e)
+    }
+    
     throw new Error(`JanitorAI API error: ${response.status} - ${errorText}`)
   }
 
-  const data = await response.json()
-  console.log('Janitor.ai response data:', data)
-  return data.response || data.message || 'I could not process that question.'
+  // Some JanitorAI hackathon endpoints stream SSE even when stream:false.
+  // Read raw text and parse either JSON or SSE.
+  const contentType = response.headers.get('content-type') || ''
+  const raw = await response.text()
+  console.log('JanitorAI content-type:', contentType)
+  console.log('JanitorAI raw (first 200):', raw.slice(0, 200))
+
+  try {
+    // Try JSON first
+    const data = JSON.parse(raw)
+    console.log('JanitorAI response data:', JSON.stringify(data).slice(0, 200))
+
+    // Write success response to file for debugging
+    try {
+      const fs = await import('fs/promises')
+      await fs.writeFile('janitorai-success.txt', `Response:\n${JSON.stringify(data, null, 2)}\n\nTime: ${new Date().toISOString()}`, 'utf-8')
+    } catch (e) {
+      console.error('Could not write success file:', e)
+    }
+
+    if (data.choices && data.choices[0]?.message?.content) {
+      return data.choices[0].message.content.trim()
+    }
+    return (data.response || data.message || data.text || data.content || '').toString().trim() || 'I could not process that question.'
+  } catch (jsonErr) {
+    // Fallback: parse SSE stream in raw text
+    // Expected format: lines like `data: {"choices":[{"delta":{"content":"..."}}]}` and ends with `data: [DONE]`
+    let assembled = ''
+    try {
+      const lines = raw.split(/\r?\n/)
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+        const payload = trimmed.slice(5).trim() // after 'data:'
+        if (!payload || payload === '[DONE]') continue
+        try {
+          const obj = JSON.parse(payload)
+          const choice = obj.choices?.[0]
+          // OpenAI-style delta streaming
+          const deltaText = choice?.delta?.content || choice?.message?.content || obj.content || obj.text || ''
+          if (typeof deltaText === 'string') assembled += deltaText
+        } catch (e) {
+          // Not JSON payload; ignore this chunk
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse SSE stream:', e)
+    }
+
+    // Write raw SSE for debugging
+    try {
+      const fs = await import('fs/promises')
+      await fs.writeFile('janitorai-raw.txt', `Raw:\n${raw}\n\nTime: ${new Date().toISOString()}`, 'utf-8')
+    } catch (e) {
+      console.error('Could not write raw file:', e)
+    }
+
+    const finalText = assembled.trim()
+    if (finalText) return finalText
+    throw new Error(`JanitorAI returned unexpected format. First bytes: ${raw.slice(0, 50)}`)
+  }
 }
 
 export async function POST(req: Request) {
@@ -130,42 +208,77 @@ export async function POST(req: Request) {
     const body = await req.json()
     const question: string = body?.question || ''
     const gameContext = body?.gameContext
+    const preferredProvider: 'baseten' | 'janitorai' | 'auto' = body?.provider || 'auto'
     
     const useBaseten = !!process.env.BASETEN_API_KEY && !!process.env.BASETEN_MODEL_ID
     const useJanitorAI = !!process.env.JANITOR_AI_API_KEY
 
-    // Priority 1: Use Baseten (game-aware narrator)
-    if (useBaseten) {
+    console.log(`Provider preference: ${preferredProvider}, Baseten available: ${useBaseten}, JanitorAI available: ${useJanitorAI}`)
+
+    // If user prefers a specific provider, try that first
+    if (preferredProvider === 'baseten' && useBaseten) {
       try {
-        console.log('Calling Baseten...')
+        console.log('Calling Baseten (user preference)...')
         const answer = await callBaseten(question, gameContext)
         console.log('✅ Baseten response received:', answer.substring(0, 50))
         return NextResponse.json({ answer, provider: 'baseten' })
       } catch (error: any) {
         console.error('❌ Baseten error:', error)
-        console.error('Error message:', error.message)
-        console.error('Error stack:', error.stack)
-        console.log('Falling back to next option...')
-        // Fall through to next option
+        console.log('Baseten failed, falling back to JanitorAI...')
+        if (useJanitorAI) {
+          try {
+            const answer = await callJanitorAI(question, gameContext)
+            console.log('✅ JanitorAI fallback response received:', answer.substring(0, 50))
+            return NextResponse.json({ answer, provider: 'janitorai' })
+          } catch {}
+        }
       }
-    } else {
-      console.log('Baseten not configured - missing BASETEN_API_KEY or BASETEN_MODEL_ID')
-    }
-
-    // Priority 2: Use JanitorAI if configured
-    if (useJanitorAI) {
+    } else if (preferredProvider === 'janitorai' && useJanitorAI) {
       try {
-        console.log('Calling JanitorAI...')
+        console.log('Calling JanitorAI (user preference)...')
         const answer = await callJanitorAI(question, gameContext)
         console.log('✅ JanitorAI response received:', answer.substring(0, 50))
         return NextResponse.json({ answer, provider: 'janitorai' })
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ JanitorAI error:', error)
-        console.log('Falling back to mock host')
-        // Fall through to mock if JanitorAI fails
+        console.error('Error message:', error.message)
+        console.error('Error stack:', error.stack)
+        
+        // Return error details instead of falling back when explicitly selected
+        return NextResponse.json({ 
+          answer: `JanitorAI Error: ${error.message}. Please check the console for details.`,
+          provider: 'janitorai-error',
+          error: {
+            message: error.message,
+            status: error.status || 'unknown'
+          }
+        })
       }
-    } else if (!useBaseten) {
-      console.log('No AI configured, using mock host')
+    } else {
+      // Auto mode: try Baseten first, then JanitorAI
+      if (useBaseten) {
+        try {
+          console.log('Calling Baseten (auto mode)...')
+          const answer = await callBaseten(question, gameContext)
+          console.log('✅ Baseten response received:', answer.substring(0, 50))
+          return NextResponse.json({ answer, provider: 'baseten' })
+        } catch (error: any) {
+          console.error('❌ Baseten error:', error)
+          console.log('Falling back to JanitorAI...')
+        }
+      }
+
+      if (useJanitorAI) {
+        try {
+          console.log('Calling JanitorAI...')
+          const answer = await callJanitorAI(question, gameContext)
+          console.log('✅ JanitorAI response received:', answer.substring(0, 50))
+          return NextResponse.json({ answer, provider: 'janitorai' })
+        } catch (error) {
+          console.error('❌ JanitorAI error:', error)
+          console.log('Falling back to mock host')
+        }
+      }
     }
 
     // Priority 3: Mock host fallback with game context awareness
