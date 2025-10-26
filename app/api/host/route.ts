@@ -25,11 +25,11 @@ async function callBaseten(question: string, gameContext?: any, personality?: 'd
       messages: [
         {
           role: "system",
-          content: "LANGUAGE: ENGLISH ONLY. You are an English-speaking game narrator for Werewolf/Mafia. 你必须用英语回答。不要用中文。Always reply in English, never Chinese. Keep responses SHORT (1-2 sentences). Only reveal information players should know."
+          content: "You are a dramatic English-speaking game narrator for Werewolf/Mafia. CRITICAL RULE: You MUST respond ONLY in English language. Never use Chinese (中文). Keep responses SHORT (1-2 sentences maximum). Be dramatic and atmospheric. Only reveal information players should know based on their role and game phase."
         },
         {
           role: "user",
-          content: `[RESPOND IN ENGLISH ONLY - NO CHINESE]\n\nGame State: ${gameContext ? JSON.stringify(gameContext, null, 2) : 'Not started'}\n\nQuestion: ${question}\n\n[CRITICAL: Your response must be in English. 用英语回答。Brief answer (1-2 sentences).]`
+          content: `Game Context: ${gameContext ? JSON.stringify(gameContext, null, 2) : 'Not started'}\n\nNarration Request: ${question}\n\nIMPORTANT: Respond in English only with 1-2 dramatic sentences. Do not use Chinese characters.`
         }
       ],
       max_tokens: 150,
@@ -91,6 +91,23 @@ async function callBaseten(question: string, gameContext?: any, personality?: 'd
   
   const trimmed = responseText.trim()
   
+  // Check if response is empty or just whitespace/newlines
+  if (!trimmed || trimmed.length < 3) {
+    console.warn('⚠️ Baseten returned empty/invalid response, using English fallback')
+    // Return a generic English response instead
+    if (question.toLowerCase().includes('night')) {
+      return 'Night falls over the village. The werewolves are hunting.'
+    } else if (question.toLowerCase().includes('day') || question.toLowerCase().includes('dawn') || question.toLowerCase().includes('awaken')) {
+      return 'The village awakens. Time to discuss who might be the werewolf.'
+    } else if (question.toLowerCase().includes('vote') || question.toLowerCase().includes('lynch')) {
+      return 'The village has made their decision. Justice will be served.'
+    } else if (question.toLowerCase().includes('dead') || question.toLowerCase().includes('eliminated')) {
+      return 'A player has fallen. The game continues with those who remain.'
+    } else {
+      return 'The game continues. Stay alert and trust your instincts.'
+    }
+  }
+  
   // Check if response contains Chinese characters
   const hasChinese = /[\u4e00-\u9fa5]/.test(trimmed)
   if (hasChinese) {
@@ -98,8 +115,12 @@ async function callBaseten(question: string, gameContext?: any, personality?: 'd
     // Return a generic English response instead
     if (question.toLowerCase().includes('night')) {
       return 'Night falls over the village. The werewolves are hunting.'
-    } else if (question.toLowerCase().includes('day')) {
+    } else if (question.toLowerCase().includes('day') || question.toLowerCase().includes('dawn') || question.toLowerCase().includes('awaken')) {
       return 'The village awakens. Time to discuss who might be the werewolf.'
+    } else if (question.toLowerCase().includes('vote') || question.toLowerCase().includes('lynch')) {
+      return 'The village has made their decision. Justice will be served.'
+    } else if (question.toLowerCase().includes('dead') || question.toLowerCase().includes('eliminated')) {
+      return 'A player has fallen. The game continues with those who remain.'
     } else {
       return 'The game continues. Stay alert and trust your instincts.'
     }
