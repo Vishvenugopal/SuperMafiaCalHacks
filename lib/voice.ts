@@ -151,6 +151,44 @@ export function isSttAvailable() {
   return !!(w.SpeechRecognition || w.webkitSpeechRecognition)
 }
 
+/**
+ * Request microphone permission
+ */
+export async function requestMicrophonePermission(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.permissions) {
+    return false
+  }
+  
+  try {
+    const result = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+    return result.state === 'granted'
+  } catch (error) {
+    console.warn('Could not check microphone permission:', error)
+    return false
+  }
+}
+
+/**
+ * Check if microphone permission is granted
+ */
+export async function hasMicrophonePermission(): Promise<boolean> {
+  if (typeof navigator === 'undefined') return false
+  
+  try {
+    if (navigator.permissions) {
+      const result = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+      return result.state === 'granted'
+    }
+    // Fallback: try to access getUserMedia
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    stream.getTracks().forEach(track => track.stop())
+    return true
+  } catch (error) {
+    console.warn('Microphone permission check failed:', error)
+    return false
+  }
+}
+
 export async function sttListenOnce(): Promise<string | null> {
   if (typeof window === 'undefined') return null
   
@@ -200,7 +238,10 @@ export function startSttStream(
   if (typeof window === 'undefined') return false
   const w = window as any
   const SR = w.SpeechRecognition || w.webkitSpeechRecognition
-  if (!SR) return false
+  if (!SR) {
+    console.error('Speech Recognition API not available in this browser')
+    return false
+  }
 
   // Stop any existing session first
   stopSttStream()

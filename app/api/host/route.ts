@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
+import { getEnv } from '@/lib/env-validation'
 
 async function callBaseten(question: string, gameContext?: any, personality?: 'default' | 'funny' | 'rap'): Promise<string> {
-  const apiKey = process.env.BASETEN_API_KEY
-  const modelName = process.env.BASETEN_MODEL_ID || 'zai-org/GLM-4.6'
+  const apiKey = getEnv('BASETEN_API_KEY')
+  const modelName = getEnv('BASETEN_MODEL_ID', 'zai-org/GLM-4.6')
   
   console.log('Baseten API Key present:', !!apiKey)
   console.log('Baseten Model Name:', modelName)
   
   if (!apiKey) {
-    throw new Error('Baseten API key not configured')
+    throw new Error('Baseten API key not configured - please set BASETEN_API_KEY environment variable')
   }
 
   console.log('Calling Baseten API with model:', modelName)
@@ -108,10 +109,10 @@ async function callBaseten(question: string, gameContext?: any, personality?: 'd
 }
 
 async function callJanitorAI(question: string, gameContext?: any, personality?: 'default' | 'funny' | 'rap'): Promise<string> {
-  const apiKey = process.env.JANITOR_AI_API_KEY
+  const apiKey = getEnv('JANITOR_AI_API_KEY')
   
   if (!apiKey) {
-    throw new Error('JanitorAI API key not configured')
+    throw new Error('JanitorAI API key not configured - please set JANITOR_AI_API_KEY environment variable')
   }
 
   console.log('Calling JanitorAI hackathon endpoint...')
@@ -229,8 +230,8 @@ export async function POST(req: Request) {
     const preferredProvider: 'baseten' | 'janitorai' | 'auto' = body?.provider || 'auto'
     const personality: 'default' | 'funny' | 'rap' | undefined = body?.personality || body?.voicePersonality
     
-    const useBaseten = !!process.env.BASETEN_API_KEY && !!process.env.BASETEN_MODEL_ID
-    const useJanitorAI = !!process.env.JANITOR_AI_API_KEY
+    const useBaseten = !!getEnv('BASETEN_API_KEY') && !!getEnv('BASETEN_MODEL_ID')
+    const useJanitorAI = !!getEnv('JANITOR_AI_API_KEY')
 
     console.log(`Provider preference: ${preferredProvider}, Baseten available: ${useBaseten}, JanitorAI available: ${useJanitorAI}`)
 
