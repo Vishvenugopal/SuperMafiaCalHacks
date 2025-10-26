@@ -38,7 +38,8 @@ export type Store = GameState & { ui: UIState } & Actions
 const defaultSettings: GameSettings = {
   theme: 'werewolf',
   hostPersonality: 'classic',
-  aiProvider: 'baseten',
+  aiProvider: 'auto',
+  voicePersonality: 'default',
   rolesEnabled: { werewolf: 1, seer: 1, medic: 1 },
   timers: { playerTalkingSec: 90, discussionSec: 120, defenseSec: 30, nightAutoAdvance: false },
   allowSelfProtect: false,
