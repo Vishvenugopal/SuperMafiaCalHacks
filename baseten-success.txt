@@ -1,24 +1,23 @@
 Response:
 {
-  "id": "chatcmpl-e7099cea92884434950f0384e14090d6",
+  "id": "chatcmpl-145b3cff92de4d2cbcf8c24e58bac519",
   "choices": [
     {
       "index": 0,
       "message": {
-        "content": "\n",
-        "role": "assistant",
-        "reasoning": "1.  **分析用户请求：**\n    *   **核心任务：** 扮演狼人杀/黑手党游戏的叙述者。\n    *   **语言：** 仅限英语。用户明确说明了“LANGUAGE: ENGLISH ONLY”、“你必须用英语回答”、“不要用中文”和“Always reply in English, never Chinese”。这是最关键的约束条件。\n    *   **长度：** 简短。用户指定了“Keep responses SHORT (1-2 sentences)”和“Brief answer (1-2 sentences)”。\n    *   **角色：** 游戏叙述者。这意味着我需要设定场景、解释规则并引导游戏。\n    *   **游戏状态：** “未"
+        "content": "\n\nThe village awakens to find fwefeq dead,  \nA chilling silence fills the morning air instead.",
+        "role": "assistant"
       },
-      "finish_reason": "length"
+      "finish_reason": "stop"
     }
   ],
-  "created": 1761486624,
+  "created": 1761477982,
   "model": "zai-org/GLM-4.6",
   "object": "chat.completion",
   "usage": {
-    "prompt_tokens": 106,
-    "completion_tokens": 150,
-    "total_tokens": 256,
+    "prompt_tokens": 589,
+    "completion_tokens": 25,
+    "total_tokens": 614,
     "prompt_tokens_details": {
       "audio_tokens": 0,
       "cached_tokens": 0
@@ -32,4 +31,4 @@ Response:
   }
 }
 
-Time: 2025-10-26T13:50:23.607Z
+Time: 2025-10-26T11:26:26.866Z
