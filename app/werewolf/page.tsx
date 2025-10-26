@@ -350,9 +350,8 @@ export default function Home() {
     const seers = g.settings.rolesEnabled.seer ?? 1
     const medics = g.settings.rolesEnabled.medic ?? 1
     
-    // Calculate minimum required players based on roles
-    const specialRoles = werewolves + seers + medics
-    const minPlayers = Math.max(5, specialRoles + 2) // At least 2 villagers
+    // Minimum 3 players for easier testing
+    const minPlayers = 3
     const playersNeeded = Math.max(0, minPlayers - players.length)
     
     return (

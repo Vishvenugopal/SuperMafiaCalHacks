@@ -91,15 +91,15 @@ export default function Home() {
         {/* Game Mode Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10 px-4">
           <GameModeCard
-            title="Werewolf"
-            description="Classic social deduction game with werewolves, villagers, and special roles"
+            title="Classic Mode"
+            description="Classic social deduction game with werewolves, villagers, and special roles. [Single-Device]"
             icon="🐺"
             href="/werewolf"
           />
           
           <GameModeCard
-            title="AI Judge"
-            description="Full Werewolf game where AI Judge decides eliminations (multi-device)"
+            title="Judge Mode"
+            description="Basically Werewolf but an AI Judge decides who to vote out (and players have to persuade it). [Multi-Device]"
             icon="⚖️"
             href="/judge-mode"
           />

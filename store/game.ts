@@ -76,9 +76,7 @@ function assignRoles(players: Player[], settings: GameSettings, seed: number) {
   const rng = mulberry32(seed)
   const shuffledPlayers = shuffle(players, rng)
   const assigned: Player[] = shuffledPlayers.map((p: Player, i: number) => ({ ...p, role: roles[i], alive: true }))
-  const backToOriginalOrder: Player[] = assigned
-    .sort((a: Player, b: Player) => players.findIndex((x: Player) => x.id === a.id) - players.findIndex((x: Player) => x.id === b.id))
-  return backToOriginalOrder
+  return assigned
 }
 
 export const useGame = create<Store>((set, get) => ({
@@ -110,8 +108,8 @@ export const useGame = create<Store>((set, get) => ({
 
   startGameWithSeed: (seed: number, settingsOverride?: Partial<GameSettings>) => {
     const s = get()
-    if (s.players.length < 5) return
     const settings: GameSettings = { ...s.settings, ...(settingsOverride || {}) }
+    if (s.players.length < 3) return
     const players = assignRoles(s.players, settings, seed)
     const order = players.map(p => p.id)
     set({ seed, settings, players, phase: { kind: 'RoleAssignment' }, ui: { roleRevealOrder: order, roleRevealIndex: 0 }, round: 1 })
@@ -119,7 +117,7 @@ export const useGame = create<Store>((set, get) => ({
 
   startGame: () => {
     const s = get()
-    if (s.players.length < 5) return
+    if (s.players.length < 3) return
     const seed = s.seed
     const players = assignRoles(s.players, s.settings, seed)
     // Keep original player order for role reveals (don't shuffle)
