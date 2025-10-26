@@ -75,6 +75,9 @@ export default function JudgeMode() {
   const [deviceId] = useState(() => `device_${Date.now()}_${Math.random().toString(36).slice(2)}`)
   const [isHost, setIsHost] = useState(false)
   const [hostId, setHostId] = useState('')
+  const [revealing, setRevealing] = useState(false)
+  const [readyCount, setReadyCount] = useState<{completed:number,total:number}>({completed:0,total:0})
+  const [announcedPhase, setAnnouncedPhase] = useState<string>('')
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>([])
   const [myPlayerName, setMyPlayerName] = useState('')
   
@@ -157,7 +160,7 @@ export default function JudgeMode() {
       const answer = String(data.answer || '')
       setHostResponse(answer)
       setHostProvider(data.provider || 'unknown')
-      await ttsSpeak(answer)
+      await ttsSpeak(answer, g.settings.voicePersonality)
     } catch (error) {
       console.error('Narrator error:', error)
     }
@@ -165,6 +168,9 @@ export default function JudgeMode() {
   
   // Narrator announcements for phase changes
   useEffect(() => {
+    if (!isHost) return
+    if (announcedPhase === gamePhase.kind) return
+    setAnnouncedPhase(gamePhase.kind)
     if (gamePhase.kind === 'DayStart') {
       const round = g.round
       const events = g.eventLog.filter(e => e.round === round && e.public)
@@ -191,7 +197,7 @@ export default function JudgeMode() {
         getNarratorResponse('The village could not agree on who to eliminate. Express the tension. 1-2 sentences.')
       }
     }
-  }, [gamePhase.kind, g.round, g.eventLog, g.players, getNarratorResponse])
+  }, [gamePhase.kind, g.round, g.eventLog, g.players, getNarratorResponse, isHost, announcedPhase])
   
   // Phase sync monitor - ensures all players stay in sync
   useEffect(() => {
@@ -260,47 +266,12 @@ export default function JudgeMode() {
     // Play narrator when entering PlayerTalking (host only to avoid duplicate TTS)
     if (gamePhase.kind === 'PlayerTalking' && !playerTalkingNarrated && isHost) {
       setPlayerTalkingNarrated(true)
-      ttsSpeak('The village gathers to discuss. Share your suspicions and figure out who the werewolf might be.')
+      ttsSpeak('The village gathers to discuss. Share your suspicions and figure out who the werewolf might be.', g.settings.voicePersonality)
         .catch(err => console.error('TTS error:', err))
     }
   }, [gamePhase.kind, phase, isHost, playerTalkingNarrated, roomCode, deviceId])
   
-  // Poll for skip votes during PlayerTalking
-  useEffect(() => {
-    if (phase !== 'playing' || gamePhase.kind !== 'PlayerTalking') return
-    
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('/api/room', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_state',
-            roomCode,
-            deviceId
-          })
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success && data.room) {
-            setSkipVotes(data.room.skipVotes || 0)
-            
-            // Auto-advance if all voted skip and host
-            if (isHost && data.room.allVotedSkip && gamePhase.kind === 'PlayerTalking') {
-              console.log('All players voted to skip! Auto-progressing...')
-              g.startDiscussion()
-              await pushSnapshot(useGame.getState())
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Skip vote polling error (non-fatal):', e)
-      }
-    }, 1000)
-    
-    return () => clearInterval(interval)
-  }, [phase, gamePhase.kind, roomCode, deviceId, isHost])
+  // (Removed) Separate skip-vote polling consolidated into unified polling
   
   // Auto-mark dead players and villagers as complete (MUST be before early returns)
   useEffect(() => {
@@ -397,6 +368,18 @@ export default function JudgeMode() {
           
           // Everyone: Check for synchronized actions
           if (data.success) {
+            // Update readiness/skip counters for UI
+            if (typeof data.rolesRevealed === 'number' && Array.isArray(data.players)) {
+              setReadyCount({ completed: data.rolesRevealed, total: data.players.length })
+            }
+            if (data.room) {
+              setSkipVotes(data.room.skipVotes || 0)
+              if (isHost && data.room.allVotedSkip && gamePhase.kind === 'PlayerTalking') {
+                console.log('All players voted to skip! Auto-progressing...')
+                g.startDiscussion()
+                await pushSnapshot(useGame.getState())
+              }
+            }
             // Check for role reveal completion (host advances game)
             if (isHost && gamePhase.kind === 'RoleAssignment' && data.allRolesRevealed) {
               console.log('[HOST] All roles revealed! Advancing to night...')
@@ -444,7 +427,7 @@ export default function JudgeMode() {
       } catch (error) {
         console.error('Game state polling error:', error)
       }
-    }, 1000) // Poll every second for responsive gameplay
+    }, 1500) // Slightly reduced frequency to cut API load
     
     return () => clearInterval(interval)
   }, [phase, isHost, roomCode, deviceId, gamePhase.kind, gameRound, pushSnapshot])
@@ -938,10 +921,35 @@ export default function JudgeMode() {
                     <option value="auto">Auto</option>
                   </select>
                 </div>
+                {/* Voice personality (shared with classic) */}
+                <div>
+                  <label className="block text-xs opacity-70 mb-1">🎙️ Voice Personality</label>
+                  <select
+                    value={g.settings.voicePersonality as any}
+                    onChange={e => g.updateSettings({ voicePersonality: e.target.value as any })}
+                    className="w-full select-glass text-sm"
+                  >
+                    <option value="default">Default</option>
+                    <option value="funny">Funny</option>
+                    <option value="rap">Rap</option>
+                  </select>
+                </div>
+
+                {/* API Keys (optional) */}
+                <div className="mt-4 space-y-2 glass rounded-xl p-3">
+                  <div className="text-xs opacity-70">API Keys (Optional, session override)</div>
+                  <input type="text" placeholder="Baseten Model ID" value={g.settings.apiKeys?.basetenModelId || ''} onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, basetenModelId: e.target.value } })} className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none" />
+                  <input type="password" placeholder="Baseten API Key" value={g.settings.apiKeys?.basetenApiKey || ''} onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, basetenApiKey: e.target.value } })} className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none" />
+                  <input type="password" placeholder="JanitorAI API Key" value={g.settings.apiKeys?.janitorAiApiKey || ''} onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, janitorAiApiKey: e.target.value } })} className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none" />
+                  <input type="text" placeholder="JanitorAI Character ID" value={g.settings.apiKeys?.janitorAiCharacterId || ''} onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, janitorAiCharacterId: e.target.value } })} className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none" />
+                  <input type="password" placeholder="ElevenLabs API Key" value={g.settings.apiKeys?.elevenlabsApiKey || ''} onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, elevenlabsApiKey: e.target.value } })} className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none" />
+                  <input type="text" placeholder="ElevenLabs Voice ID" value={g.settings.apiKeys?.elevenlabsVoiceId || ''} onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, elevenlabsVoiceId: e.target.value } })} className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none" />
+                </div>
+
                 <div className="h-px bg-white/20"></div>
                 <Button
                   onClick={startGame}
-                  className="w-full bg-gradient-to-r from-red-600 to-red-800 text-white"
+                  className="w-full bg-[#a11616] hover:bg-[#b7410e] text-white shadow-glowBlood"
                   disabled={roomPlayers.length < 3}
                 >
                   Start Game ({roomPlayers.length}/3+)
@@ -982,24 +990,36 @@ export default function JudgeMode() {
                 <div className="text-2xl font-bold">{myPlayerName}</div>
               </div>
               <div className="text-sm opacity-70">Tap below to reveal your secret role</div>
+              <div className="text-xs opacity-70">Ready: {readyCount.completed}/{readyCount.total}</div>
               <Button 
-                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white"
+                className="w-full bg-[#7a2606] hover:bg-[#8c2f1b] text-white"
+                disabled={revealing}
                 onClick={async () => {
+                  if (revealing) return
+                  setRevealing(true)
                   setRoleRevealed(true)
-                  
-                  // Mark role as revealed on server
-                  await fetch('/api/room', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      action: 'mark_role_revealed',
-                      roomCode,
-                      deviceId
+                  try {
+                    const res = await fetch('/api/room', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'mark_role_revealed',
+                        roomCode,
+                        deviceId
+                      })
                     })
-                  })
+                    if (res.ok) {
+                      const data = await res.json()
+                      if (typeof data.completed === 'number' && typeof data.total === 'number') {
+                        setReadyCount({ completed: data.completed, total: data.total })
+                      }
+                    }
+                  } finally {
+                    setRevealing(false)
+                  }
                 }}
               >
-                Reveal My Role
+                {revealing ? 'Revealing...' : 'Reveal My Role'}
               </Button>
             </div>
           </div>
@@ -1036,7 +1056,7 @@ export default function JudgeMode() {
               {myRole === 'villager' && <div>Help identify and eliminate werewolves through discussion.</div>}
             </div>
             <div className="text-sm opacity-70 mt-6 text-center">
-              ✓ Ready! Waiting for all players...
+              ✓ Ready {readyCount.completed}/{readyCount.total}. Waiting for all players...
             </div>
           </div>
         </div>

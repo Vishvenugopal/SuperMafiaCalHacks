@@ -1002,6 +1002,15 @@ export default function Home() {
       {/* Instructions Popup */}
       <InstructionsPopup isOpen={showInstructions} onClose={() => setShowInstructions(false)} />
       
+      {/* Floating Back Button */}
+      <a
+        href="/"
+        className="fixed top-4 left-4 w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold glass-strong hover:scale-110 active:scale-95 transition-all z-40"
+        title="Back to Home"
+      >
+        ←
+      </a>
+      
       {/* Floating Instructions Button */}
       <button
         onClick={() => setShowInstructions(true)}

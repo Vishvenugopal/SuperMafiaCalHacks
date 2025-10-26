@@ -6,6 +6,17 @@
   color-scheme: dark;
   --font-heading: 'Boldonse', sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  /* Warm/Black palette */
+  --c-bg: #0b0b0c;       /* coal */
+  --c-bg-2: #151314;     /* soot */
+  --c-ink: #0f0e10;      /* ink */
+  --c-ember: #b7410e;    /* ember */
+  --c-ember-deep: #7a2606;
+  --c-rust: #8c2f1b;
+  --c-blood: #a11616;
+  --c-brass: #b58b2a;
+  --c-amber: #c27b32;
+  --c-fg: #e5e5e5;
 }
 
 html, body { 
@@ -14,11 +25,14 @@ html, body {
 }
 
 body { 
-  background-color: #0a071a;
-  background: radial-gradient(1200px 800px at 50% 20%, rgba(88, 28, 135, 0.25), transparent 60%),
-              linear-gradient(135deg, #0a071a 0%, #1a1147 55%, #120f2e 100%);
-  background-attachment: fixed, fixed;
-  color: #e5e5e5;
+  background-color: var(--c-bg);
+  /* Subtle dirty noise and vignette for gritty feel */
+  background-image:
+    radial-gradient(1000px 700px at 50% 30%, rgba(183,65,14,0.08), transparent 60%),
+    radial-gradient(800px 500px at 70% 10%, rgba(161,22,22,0.06), transparent 65%),
+    radial-gradient(900px 600px at 20% 85%, rgba(197,123,50,0.05), transparent 70%);
+  background-attachment: fixed;
+  color: var(--c-fg);
   position: relative;
   overscroll-behavior-y: contain;
 }
@@ -29,7 +43,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(1200px 800px at 50% 40%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.35) 100%);
+  background: radial-gradient(1100px 760px at 50% 40%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%);
   z-index: 0;
 }
 
@@ -40,37 +54,69 @@ body::before {
 /* Readable dark select */
 .select-glass {
   appearance: none;
-  background-color: rgba(255,255,255,0.08);
-  color: #e5e5e5;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 0.75rem; /* 12px */
-  padding: 0.5rem 0.75rem; /* 8px 12px */
+  background-color: rgba(255,255,255,0.06);
+  color: var(--c-fg);
+  border: 1px solid rgba(197,123,50,0.15);
+  border-radius: 0.5rem; /* sharper */
+  padding: 0.5rem 0.75rem;
 }
 
 .select-glass:focus {
   outline: none;
-  border-color: rgba(255,255,255,0.3);
+  border-color: rgba(197,123,50,0.35);
 }
 
 /* Options in dropdown */
 select.select-glass option {
-  background-color: #111321;
-  color: #e5e5e5;
+  background-color: var(--c-bg-2);
+  color: var(--c-fg);
 }
 
 /* Acrylic/Glass effect */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(20, 18, 19, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(197, 123, 50, 0.18);
+  box-shadow: 0 0 24px rgba(183,65,14,0.12);
+  border-radius: 10px;
 }
 
 .glass-strong {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(30px) saturate(200%);
-  -webkit-backdrop-filter: blur(30px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(23, 21, 22, 0.6);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(161,22,22,0.18);
+  box-shadow: 0 0 28px rgba(161,22,22,0.14);
+  border-radius: 12px;
+}
+
+/* Parallelogram / skewed cards */
+.skew-card {
+  position: relative;
+  transform: skew(-6deg);
+}
+
+.skew-card > .skew-content {
+  transform: skew(6deg);
+}
+
+/* Rough cut edges using clip-path for gritty look */
+.rough-edge {
+  position: relative;
+  clip-path: polygon(2% 0%, 98% 1.5%, 100% 20%, 97.5% 98%, 4% 100%, 0% 80%, 1% 10%);
+}
+
+/* Warm accent borders */
+.grit-border {
+  border: 1px solid rgba(197,123,50,0.25);
+}
+
+/* Thin warm divider */
+.warm-divider {
+  height: 2px;
+  background: rgba(197,123,50,0.55);
+  box-shadow: 0 0 12px rgba(197,123,50,0.35);
 }
 
 /* Animations */
@@ -111,24 +157,6 @@ select.select-glass option {
 }
 
 /* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  padding-top: 0.1em;
-  padding-bottom: 0.1em;
-  line-height: 1.2;
-  display: inline-block;
-}
-
-.gradient-text-red {
-  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  padding-top: 0.1em;
-  padding-bottom: 0.1em;
-  line-height: 1.2;
-  display: inline-block;
-}
+/* Retain helpers but avoid gradients sitewide; left blank intentionally */
+.gradient-text {}
+.gradient-text-red {}
