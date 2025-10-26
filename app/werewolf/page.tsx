@@ -133,6 +133,7 @@ export default function Home() {
   const [userTranscript, setUserTranscript] = useState('')
   const [listening, setListening] = useState(false)
   const [showInstructions, setShowInstructions] = useState(true) // Show on first load
+  const [showApiKeys, setShowApiKeys] = useState(false) // API Keys section collapsed by default
   const fileRef = useRef<HTMLInputElement>(null)
   const now = useNow(200)
   const timerCheckedRef = useRef(false)
@@ -379,6 +380,119 @@ export default function Home() {
             </select>
           </div>
         </Section>
+        <div className="bg-white/5 rounded-xl p-3">
+          <button 
+            onClick={() => setShowApiKeys(!showApiKeys)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <span className="text-lg font-semibold opacity-90">API Keys (Optional)</span>
+            <span className="text-xl transform transition-transform" style={{ transform: showApiKeys ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+          </button>
+          {showApiKeys && (
+            <div className="mt-3 space-y-3">
+              <div className="text-xs opacity-60 mb-2">Override API keys for this session only</div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">LiveKit WebSocket URL</label>
+                <input 
+                  type="text"
+                  value={g.settings.apiKeys?.livekitWsUrl || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, livekitWsUrl: e.target.value } })}
+                  placeholder="wss://..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">LiveKit API Key</label>
+                <input 
+                  type="text"
+                  value={g.settings.apiKeys?.livekitApiKey || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, livekitApiKey: e.target.value } })}
+                  placeholder="API..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">LiveKit API Secret</label>
+                <input 
+                  type="password"
+                  value={g.settings.apiKeys?.livekitApiSecret || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, livekitApiSecret: e.target.value } })}
+                  placeholder="Secret..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">Baseten API Key</label>
+                <input 
+                  type="password"
+                  value={g.settings.apiKeys?.basetenApiKey || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, basetenApiKey: e.target.value } })}
+                  placeholder="API Key..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">Baseten Model ID</label>
+                <input 
+                  type="text"
+                  value={g.settings.apiKeys?.basetenModelId || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, basetenModelId: e.target.value } })}
+                  placeholder="Model ID..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">JanitorAI API Key</label>
+                <input 
+                  type="password"
+                  value={g.settings.apiKeys?.janitorAiApiKey || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, janitorAiApiKey: e.target.value } })}
+                  placeholder="API Key..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">JanitorAI Character ID</label>
+                <input 
+                  type="text"
+                  value={g.settings.apiKeys?.janitorAiCharacterId || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, janitorAiCharacterId: e.target.value } })}
+                  placeholder="Character ID..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">ElevenLabs API Key</label>
+                <input 
+                  type="password"
+                  value={g.settings.apiKeys?.elevenlabsApiKey || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, elevenlabsApiKey: e.target.value } })}
+                  placeholder="API Key..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm opacity-70">ElevenLabs Voice ID</label>
+                <input 
+                  type="text"
+                  value={g.settings.apiKeys?.elevenlabsVoiceId || ''}
+                  onChange={e => g.updateSettings({ apiKeys: { ...g.settings.apiKeys, elevenlabsVoiceId: e.target.value } })}
+                  placeholder="Voice ID..."
+                  className="w-full bg-white/10 rounded px-3 py-2 text-sm outline-none"
+                />
+              </div>
+            </div>
+          )}
+        </div>
         <div className="pt-2">
           <Button className="w-full disabled:opacity-50" onClick={g.startGame} disabled={players.length < minPlayers}>Start Game</Button>
         </div>

@@ -40,6 +40,17 @@ export interface GameSettings {
   }
   allowSelfProtect: boolean
   tieRule: 'revote' | 'random' | 'no-lynch'
+  apiKeys?: {
+    livekitWsUrl?: string
+    livekitApiKey?: string
+    livekitApiSecret?: string
+    basetenApiKey?: string
+    basetenModelId?: string
+    janitorAiApiKey?: string
+    janitorAiCharacterId?: string
+    elevenlabsApiKey?: string
+    elevenlabsVoiceId?: string
+  }
 }
 
 export type Phase =

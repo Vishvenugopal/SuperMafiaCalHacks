@@ -39,6 +39,17 @@ const defaultSettings: GameSettings = {
   timers: { discussionSec: 120, defenseSec: 30, nightAutoAdvance: false },
   allowSelfProtect: false,
   tieRule: 'no-lynch',
+  apiKeys: {
+    livekitWsUrl: process.env.LIVEKIT_WS_URL || '',
+    livekitApiKey: process.env.LIVEKIT_API_KEY || '',
+    livekitApiSecret: process.env.LIVEKIT_API_SECRET || '',
+    basetenApiKey: process.env.BASETEN_API_KEY || '',
+    basetenModelId: process.env.BASETEN_MODEL_ID || '',
+    janitorAiApiKey: process.env.JANITOR_AI_API_KEY || '',
+    janitorAiCharacterId: process.env.JANITOR_AI_CHARACTER_ID || '',
+    elevenlabsApiKey: process.env.ELEVENLABS_API_KEY || '',
+    elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID || '',
+  },
 }
 
 function autoCounts(players: number) {
