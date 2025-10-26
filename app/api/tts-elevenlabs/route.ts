@@ -1,16 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getElevenLabsVoiceId } from '@/lib/voices'
 
-// Simple in-memory throttles (per process)
-let lastAt = 0
-let lastText = ''
-let lastTextAt = 0
-const COOLDOWN_MS = 3000
-const DEDUPE_WINDOW_MS = 15000
-const WINDOW_MS = 60_000
-const MAX_PER_WINDOW = 12
-let times: number[] = []
-
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -30,23 +20,6 @@ export async function POST(req: Request) {
         fallback: true 
       }, { status: 200 })
     }
-
-    // Global throttles
-    const now = Date.now()
-    times = times.filter(t => now - t < WINDOW_MS)
-    if (now - lastAt < COOLDOWN_MS) {
-      return NextResponse.json({ error: 'cooldown', fallback: true }, { status: 200 })
-    }
-    if (text === lastText && (now - lastTextAt) < DEDUPE_WINDOW_MS) {
-      return NextResponse.json({ error: 'dedupe', fallback: true }, { status: 200 })
-    }
-    if (times.length >= MAX_PER_WINDOW) {
-      return NextResponse.json({ error: 'rate_limited', fallback: true }, { status: 200 })
-    }
-    lastAt = now
-    lastText = text
-    lastTextAt = now
-    times.push(now)
 
     // Use ElevenLabs TTS API
     // Voice ID: You can get this from https://elevenlabs.io/voice-library
