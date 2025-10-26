@@ -64,7 +64,8 @@ function GameModeCard({ title, description, icon, href, locked = false }: GameMo
   }
 
   return (
-    <Link href={href!} className="block h-full">
+    <Link href={{ pathname: href }} className="block h-full">
+
       {cardContent}
     </Link>
   )
