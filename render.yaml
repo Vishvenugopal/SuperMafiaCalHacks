@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: super-mafia-game
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BASETEN_API_KEY
+        sync: false
+      - key: BASETEN_MODEL_ID
+        sync: false
+      - key: JANITOR_AI_API_KEY
+        sync: false
+      - key: JANITOR_AI_CHARACTER_ID
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+    healthCheckPath: /
