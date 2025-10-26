@@ -6,9 +6,15 @@ import { ttsSpeak, isTtsAvailable, startSttStream, stopSttStream } from '@/lib/v
 
 // Game title styling constant
 const GAME_TITLE_STYLE = {
-  fontFamily: 'Creepster, cursive',
-  color: '#DC2626',
-  textShadow: '3px 3px 6px rgba(0, 0, 0, 0.8), 0 0 20px rgba(220, 38, 38, 0.5)'
+  fontFamily: 'Boldonse, sans-serif',
+  background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+  paddingTop: '0.1em',
+  paddingBottom: '0.1em',
+  lineHeight: '1.2',
+  display: 'inline-block'
 }
 
 // Game instructions constant
@@ -41,36 +47,36 @@ Good luck, and may the best team win! 🎭
 
 function Button(props: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button {...props} className={`rounded-lg px-4 py-3 text-base font-medium bg-white text-black active:scale-[0.98] ${props.className || ''}`}></button>
+    <button {...props} className={`glass-strong rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-300 hover:scale-105 active:scale-95 ${props.className || ''}`}></button>
   )
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="space-y-3">
-      <div className="text-lg font-semibold opacity-90">{title}</div>
-      <div className="space-y-3">{children}</div>
+    <div className="space-y-2 animate-slideIn">
+      <div className="text-base font-bold gradient-text">{title}</div>
+      <div className="space-y-2">{children}</div>
     </div>
   )
 }
 
 function PlayerCard({ p, onRemove }: { p: Player; onRemove?: () => void }) {
   return (
-    <div className="flex items-center gap-3 bg-white/5 rounded-xl p-2">
-      <div className="w-12 h-12 rounded-full bg-white/10 overflow-hidden flex items-center justify-center">
+    <div className="flex items-center gap-2 glass rounded-xl p-2 animate-fadeIn hover:scale-102 transition-transform">
+      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
         {p.avatarDataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover" />
         ) : (
-          <div className="text-2xl">🙂</div>
+          <div className="text-xl">🙂</div>
         )}
       </div>
-      <div className="flex-1">
-        <div className="font-medium">{p.name}</div>
-        <div className="text-xs opacity-60">{p.alive ? 'Alive' : 'Out'}</div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-sm truncate">{p.name}</div>
+        <div className="text-xs opacity-60">{p.alive ? '✓ Alive' : '✗ Out'}</div>
       </div>
       {!!onRemove && (
-        <button onClick={onRemove} className="text-xs px-2 py-1 bg-red-500 rounded">Remove</button>
+        <button onClick={onRemove} className="text-xs px-2 py-1 bg-red-500/80 rounded-lg hover:bg-red-500 transition-colors">×</button>
       )}
     </div>
   )
@@ -78,12 +84,12 @@ function PlayerCard({ p, onRemove }: { p: Player; onRemove?: () => void }) {
 
 function NumberPicker({ value, setValue, min = 0, max = 6, label }: { value: number; setValue: (n: number) => void; min?: number; max?: number; label: string }) {
   return (
-    <div className="flex items-center justify-between bg-white/5 rounded-xl p-2">
-      <div className="font-medium">{label}</div>
+    <div className="flex items-center justify-between glass rounded-xl p-2">
+      <div className="font-medium text-sm">{label}</div>
       <div className="flex items-center gap-2">
-        <button onClick={() => setValue(Math.max(min, value - 1))} className="w-8 h-8 rounded bg-white/10">-</button>
-        <div className="w-8 text-center">{value}</div>
-        <button onClick={() => setValue(Math.min(max, value + 1))} className="w-8 h-8 rounded bg-white/10">+</button>
+        <button onClick={() => setValue(Math.max(min, value - 1))} className="w-7 h-7 rounded-lg glass-strong hover:scale-110 transition-transform">-</button>
+        <div className="w-8 text-center font-bold">{value}</div>
+        <button onClick={() => setValue(Math.min(max, value + 1))} className="w-7 h-7 rounded-lg glass-strong hover:scale-110 transition-transform">+</button>
       </div>
     </div>
   )
@@ -98,26 +104,55 @@ function useNow(ms: number) {
   return now
 }
 
+// Inline markdown renderer for **bold** within a line
+function renderInlineMarkdown(text: string) {
+  const parts: Array<string | { bold: string }> = []
+  const regex = /\*\*(.+?)\*\*/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
+    parts.push({ bold: match[1] })
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+  return (
+    <>
+      {parts.map((p, i) =>
+        typeof p === 'string' ? (
+          <span key={i}>{p}</span>
+        ) : (
+          <strong key={i} className="font-semibold text-red-300">{p.bold}</strong>
+        )
+      )}
+    </>
+  )
+}
+
 function InstructionsPopup({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   if (!isOpen) return null
   
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="bg-gray-900 border-2 border-red-600 rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn" onClick={onClose}>
+      <div className="glass-strong rounded-3xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-3xl font-bold" style={GAME_TITLE_STYLE}>Game Instructions</h2>
-          <button onClick={onClose} className="text-3xl text-gray-400 hover:text-white leading-none">×</button>
+          <h2 className="text-3xl font-bold" style={GAME_TITLE_STYLE}>Instructions</h2>
+          <button onClick={onClose} className="text-3xl text-gray-400 hover:text-white leading-none transition-colors">×</button>
         </div>
-        <div className="space-y-4 text-gray-300 whitespace-pre-line">
+        <div className="space-y-3 text-gray-300 text-sm">
           {GAME_INSTRUCTIONS.split('\n').map((line, i) => {
-            if (line.startsWith('**') && line.endsWith('**')) {
-              return <div key={i} className="text-xl font-bold text-red-400 mt-4">{line.replace(/\*\*/g, '')}</div>
+            if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
+              const text = line.replace(/\*\*/g, '').trim()
+              return <div key={i} className="text-lg font-bold text-red-400 mt-3">{text}</div>
             }
-            return <div key={i} className="text-sm leading-relaxed">{line}</div>
+            if (line.trim()) {
+              return <div key={i} className="leading-relaxed">{renderInlineMarkdown(line)}</div>
+            }
+            return <div key={i} className="h-2"></div>
           })}
         </div>
         <div className="mt-6">
-          <Button onClick={onClose} className="w-full">Got it!</Button>
+          <Button onClick={onClose} className="w-full bg-gradient-to-r from-red-600 to-red-800 text-white">Got it!</Button>
         </div>
       </div>
     </div>
@@ -318,27 +353,27 @@ export default function Home() {
     const playersNeeded = Math.max(0, minPlayers - players.length)
     
     return (
-      <div className="space-y-6">
-        <h1 className="text-5xl font-bold text-center mb-8" style={GAME_TITLE_STYLE}>
-          Super Mafia
+      <div className="space-y-4 animate-fadeIn">
+        <h1 className="text-4xl font-bold text-center" style={GAME_TITLE_STYLE}>
+          Werewolf
         </h1>
         <Section title="Players">
           <div className="space-y-2">
             {playersNeeded > 0 && (
-              <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-lg p-3 text-center text-yellow-200 text-sm">
-                You need to add {playersNeeded} more {playersNeeded === 1 ? 'player' : 'players'} to the game.
+              <div className="glass rounded-lg p-2 text-center text-yellow-300 text-xs">
+                Need {playersNeeded} more player{playersNeeded === 1 ? '' : 's'}
               </div>
             )}
             {players.map(p => (
               <PlayerCard key={p.id} p={p} onRemove={() => g.removePlayer(p.id)} />
             ))}
-            <div className="bg-white/5 rounded-xl p-3 space-y-2">
+            <div className="glass rounded-xl p-2 space-y-1.5">
               <input 
                 type="text"
                 value={newName} 
                 onChange={e => setNewName(e.target.value)} 
-                placeholder="Name" 
-                className="w-full bg-white/10 rounded px-3 py-2 outline-none"
+                placeholder="Player name" 
+                className="w-full glass-strong rounded-lg px-3 py-2 text-sm outline-none"
                 autoComplete="off"
               />
               <input ref={fileRef} type="file" accept="image/*" capture="user" onChange={e => {
@@ -347,38 +382,22 @@ export default function Home() {
                 const r = new FileReader()
                 r.onload = () => setNewPhoto(String(r.result))
                 r.readAsDataURL(f)
-              }} className="w-full text-sm" />
-              <Button onClick={addPlayer} className="w-full">Add player</Button>
+              }} className="w-full text-xs" />
+              <Button onClick={addPlayer} className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white">Add Player</Button>
             </div>
           </div>
         </Section>
         <Section title="Roles">
-          <NumberPicker label="Werewolves" value={werewolves} setValue={n => g.updateRolesEnabled('werewolf', n)} min={1} max={5} />
-          <NumberPicker label="Seer" value={seers} setValue={n => g.updateRolesEnabled('seer', n)} min={0} max={2} />
-          <NumberPicker label="Medic" value={medics} setValue={n => g.updateRolesEnabled('medic', n)} min={0} max={2} />
+          <NumberPicker label="🐺 Werewolves" value={werewolves} setValue={n => g.updateRolesEnabled('werewolf', n)} min={1} max={5} />
+          <NumberPicker label="🔮 Seer" value={seers} setValue={n => g.updateRolesEnabled('seer', n)} min={0} max={2} />
+          <NumberPicker label="💉 Medic" value={medics} setValue={n => g.updateRolesEnabled('medic', n)} min={0} max={2} />
         </Section>
-        <Section title="Theme & Host">
-          <select value={g.settings.theme} onChange={e => g.updateSettings({ theme: e.target.value as any })} className="w-full bg-white/10 rounded px-3 py-2">
-            <option value="werewolf">Werewolf</option>
-            <option value="mafia" disabled>Mafia (soon)</option>
-            <option value="custom">Custom</option>
+        <Section title="Settings">
+          <select value={g.settings.aiProvider} onChange={e => g.updateSettings({ aiProvider: e.target.value as any })} className="w-full select-glass text-sm">
+            <option value="auto">Auto AI</option>
+            <option value="baseten">Baseten</option>
+            <option value="janitorai">JanitorAI</option>
           </select>
-          {g.settings.theme === 'custom' && (
-            <input placeholder="Enter custom theme prompt" value={g.settings.customThemePrompt || ''} onChange={e => g.updateSettings({ customThemePrompt: e.target.value })} className="w-full bg-white/10 rounded px-3 py-2" />
-          )}
-          <select value={g.settings.hostPersonality} onChange={e => g.updateSettings({ hostPersonality: e.target.value })} className="w-full bg-white/10 rounded px-3 py-2">
-            <option value="classic">Classic</option>
-            <option value="spooky">Spooky</option>
-            <option value="dramatic">Dramatic</option>
-          </select>
-          <div className="space-y-1">
-            <label className="text-sm opacity-70">AI Provider</label>
-            <select value={g.settings.aiProvider} onChange={e => g.updateSettings({ aiProvider: e.target.value as any })} className="w-full bg-white/10 rounded px-3 py-2">
-              <option value="auto">Auto (Try Baseten, then JanitorAI)</option>
-              <option value="baseten">Baseten</option>
-              <option value="janitorai">JanitorAI</option>
-            </select>
-          </div>
         </Section>
         <div className="bg-white/5 rounded-xl p-3">
           <button 
@@ -493,9 +512,9 @@ export default function Home() {
             </div>
           )}
         </div>
-        <div className="pt-2">
-          <Button className="w-full disabled:opacity-50" onClick={g.startGame} disabled={players.length < minPlayers}>Start Game</Button>
-        </div>
+        <Button className="w-full bg-gradient-to-r from-red-500 to-orange-500 text-white disabled:opacity-50 disabled:cursor-not-allowed" onClick={g.startGame} disabled={players.length < minPlayers}>
+          Start Game
+        </Button>
       </div>
     )
   }
@@ -910,8 +929,7 @@ export default function Home() {
       {/* Floating Instructions Button */}
       <button
         onClick={() => setShowInstructions(true)}
-        className="fixed top-4 right-4 w-12 h-12 rounded-full flex items-center justify-center text-3xl font-bold shadow-lg z-40 active:scale-95 transition-all"
-        style={{ backgroundColor: 'red', color: 'white' }}
+        className="fixed top-4 right-4 w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold glass-strong hover:scale-110 active:scale-95 transition-all z-40 shadow-lg"
         title="Show Instructions"
       >
         ?
@@ -919,18 +937,18 @@ export default function Home() {
       
       {/* AI Host Response Display */}
       {hostResponse && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto bg-gray-900 border-2 border-purple-500 rounded-lg p-4 shadow-lg">
+        <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto glass-strong rounded-2xl p-4 shadow-2xl animate-fadeIn z-50">
           <div className="flex items-start gap-3">
             <div className="text-2xl">🎭</div>
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-bold text-purple-400">Host Response</span>
+                <span className="text-xs font-bold gradient-text">Host</span>
                 {hostProvider && (
-                  <span className={`text-xs px-2 py-0.5 rounded ${hostProvider === 'janitorai-error' ? 'bg-red-900 text-red-300' : 'bg-purple-900 text-purple-300'}`}>
-                    {hostProvider === 'baseten' ? '🤖 Baseten' : 
-                     hostProvider === 'janitorai' ? '🎭 Janitor.ai' : 
-                     hostProvider === 'janitorai-error' ? '❌ JanitorAI Error' :
-                     hostProvider === 'mock' ? '📝 Mock' : '⚠️ Error'}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${hostProvider === 'janitorai-error' ? 'bg-red-500/30 text-red-300' : 'bg-purple-500/30 text-purple-300'}`}>
+                    {hostProvider === 'baseten' ? '🤖' : 
+                     hostProvider === 'janitorai' ? '🎭' : 
+                     hostProvider === 'janitorai-error' ? '❌' :
+                     hostProvider === 'mock' ? '📝' : '⚠️'}
                   </span>
                 )}
               </div>
@@ -938,7 +956,7 @@ export default function Home() {
             </div>
             <button 
               onClick={() => setHostResponse('')}
-              className="text-gray-400 hover:text-white text-xl leading-none"
+              className="text-gray-400 hover:text-white text-xl leading-none transition-colors"
             >
               ×
             </button>

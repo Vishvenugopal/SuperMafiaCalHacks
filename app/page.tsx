@@ -3,9 +3,14 @@ import Link from 'next/link'
 
 // Game title styling constant
 const GAME_TITLE_STYLE = {
-  fontFamily: 'Creepster, cursive',
-  color: '#DC2626',
-  textShadow: '3px 3px 6px rgba(0, 0, 0, 0.8), 0 0 20px rgba(220, 38, 38, 0.5)'
+  fontFamily: 'Boldonse, sans-serif',
+  background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+  paddingTop: '0.1em',
+  paddingBottom: '0.1em',
+  lineHeight: '1.2'
 }
 
 interface GameModeCardProps {
@@ -18,23 +23,23 @@ interface GameModeCardProps {
 
 function GameModeCard({ title, description, icon, href, locked = false }: GameModeCardProps) {
   const cardContent = (
-    <div className={`relative bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-8 border-2 transition-all duration-300 h-full flex flex-col items-center justify-center ${
+    <div className={`relative glass-strong rounded-3xl p-8 transition-all duration-500 h-full flex flex-col items-center justify-center animate-fadeIn ${
       locked 
-        ? 'border-gray-700 opacity-60 cursor-not-allowed' 
-        : 'border-red-600 hover:border-red-500 hover:shadow-2xl hover:shadow-red-900/50 hover:scale-105 cursor-pointer'
+        ? 'opacity-50 cursor-not-allowed' 
+        : 'hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/30 cursor-pointer animate-float'
     }`}>
       {locked && (
-        <div className="absolute top-4 right-4 text-3xl">🔒</div>
+        <div className="absolute top-4 right-4 text-3xl opacity-70">🔒</div>
       )}
-      <div className="text-6xl mb-4 text-center">{icon}</div>
-      <h2 className="text-3xl font-bold text-center mb-3" style={locked ? {} : { color: '#DC2626' }}>
+      <div className="text-7xl mb-6 text-center animate-float">{icon}</div>
+      <h2 className="text-4xl font-bold text-center mb-4" style={{ fontFamily: 'Boldonse, sans-serif', background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', paddingTop: '0.1em', paddingBottom: '0.1em', lineHeight: '1.2', display: 'inline-block' }}>
         {title}
       </h2>
-      <p className="text-center text-gray-400 text-sm">
+      <p className="text-center text-gray-300 text-base leading-relaxed">
         {description}
       </p>
       {locked && (
-        <div className="mt-4 text-center text-yellow-500 text-xs font-semibold">
+        <div className="mt-6 text-center text-yellow-400 text-sm font-semibold tracking-wider">
           COMING SOON
         </div>
       )}
@@ -54,20 +59,23 @@ function GameModeCard({ title, description, icon, href, locked = false }: GameMo
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4">
-      <div className="max-w-4xl w-full space-y-12">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="max-w-5xl w-full space-y-16 animate-fadeIn">
         {/* Title */}
-        <h1 className="text-7xl font-bold text-center mb-12" style={GAME_TITLE_STYLE}>
-          Super Mafia
-        </h1>
+        <div className="text-center space-y-4">
+          <h1 className="text-8xl font-bold mb-4 animate-float" style={{...GAME_TITLE_STYLE, display: 'inline-block'}}>
+            Super Mafia
+          </h1>
+          <div className="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-red-500 to-transparent rounded-full"></div>
+        </div>
 
         {/* Subtitle */}
-        <p className="text-center text-xl text-gray-400 mb-8">
+        <p className="text-center text-2xl text-gray-300 font-light tracking-wide">
           Choose Your Game Mode
         </p>
 
         {/* Game Mode Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 px-4">
           <GameModeCard
             title="Werewolf"
             description="Classic social deduction game with werewolves, villagers, and special roles"
