@@ -21,8 +21,13 @@ interface Room {
   lastActivity: number
 }
 
-const rooms = new Map<string, Room>()
-console.log('🏠 Room API initialized - in-memory rooms cleared')
+// Use global to persist across hot reloads in development
+const globalForRooms = global as unknown as { rooms?: Map<string, Room> }
+const rooms = globalForRooms.rooms ?? new Map<string, Room>()
+if (!globalForRooms.rooms) {
+  globalForRooms.rooms = rooms
+  console.log('🏠 Room API initialized')
+}
 
 // Cleanup old rooms every 5 minutes
 setInterval(() => {
@@ -389,7 +394,8 @@ export async function POST(request: Request) {
           success: true,
           skipVotes: room.skipVotes.size,
           total: room.players.length,
-          allVotedSkip: room.skipVotes.size >= room.players.length
+          allVotedSkip: room.skipVotes.size >= room.players.length,
+          gameState: room.gameState // Include game state for immediate sync
         })
       }
       

@@ -105,6 +105,7 @@ export default function JudgeMode() {
   const [playerTalkingNarrated, setPlayerTalkingNarrated] = useState(false)
   const [skipVotes, setSkipVotes] = useState(0)
   const [hasVotedSkip, setHasVotedSkip] = useState(false)
+  const hasVotedSkipRef = useRef(false) // Persistent ref to prevent polling reset
   const [playerAvatar, setPlayerAvatar] = useState<string | undefined>()
   const fileRef = useRef<HTMLInputElement>(null)
   
@@ -213,7 +214,7 @@ export default function JudgeMode() {
       
       // Reset role tracking on server (host only)
       if (isHost) {
-        fetch('/api/room', {
+        void fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -222,7 +223,7 @@ export default function JudgeMode() {
             deviceId,
             trackingType: 'roles'
           })
-        })
+        }).catch(() => {})
       }
     }
     
@@ -239,11 +240,13 @@ export default function JudgeMode() {
     if (currentPhase === 'PlayerTalking') {
       console.log(`[${isHost ? 'HOST' : 'CLIENT'}] Entering PlayerTalking - resetting skip votes`)
       setHasVotedSkip(false)
+      hasVotedSkipRef.current = false
+      setSkipVotes(0)
       setPlayerTalkingNarrated(false)
       
       // Reset skip votes tracking on server (host only)
       if (isHost) {
-        fetch('/api/room', {
+        void fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -252,7 +255,7 @@ export default function JudgeMode() {
             deviceId,
             trackingType: 'skip'
           })
-        })
+        }).catch(() => {})
       }
     }
     
@@ -278,7 +281,7 @@ export default function JudgeMode() {
     if (gamePhase.kind === 'NightStart' && !nightActionSubmitted) {
       if (!amIAlive || myRole === 'villager') {
         setNightActionSubmitted(true)
-        fetch('/api/room', {
+        void fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -286,7 +289,7 @@ export default function JudgeMode() {
             roomCode,
             deviceId
           })
-        })
+        }).catch(() => {})
       }
     }
   }, [gamePhase.kind, nightActionSubmitted, amIAlive, myRole, roomCode, deviceId])
@@ -320,23 +323,40 @@ export default function JudgeMode() {
 
   // Unified game state polling - ensures perfect sync for all players
   useEffect(() => {
-    if (phase !== 'playing') return
+    if (phase !== 'playing' || !roomCode) return
     
+    console.log('[GAME POLL] Starting game state polling')
     const interval = setInterval(async () => {
       try {
+        // Read fresh state at the start of each poll
+        const currentState = useGame.getState()
+        const currentPhase = currentState.phase
+        const currentRound = currentState.round
+        const currentIsHost = isHost // Capture from closure
+        
         const response = await fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_state', roomCode, deviceId })
         })
         
-        if (response.ok) {
-          const data = await response.json()
-          
-          // Non-hosts: Always hydrate from server state
-          if (!isHost && data.success && data.gameState) {
-            const oldPhase = gamePhase.kind
-            const oldRound = gameRound
+        if (!response.ok) {
+          if (response.status === 404) {
+            console.error('[GAME POLL] Room not found - stopping polling and returning to join screen')
+            setPhase('join')
+            setRoomCode('')
+            return // Stop polling
+          }
+          console.error('[GAME POLL] Server error:', response.status)
+          return
+        }
+        
+        const data = await response.json()
+        
+        // Non-hosts: Always hydrate from server state to stay in sync
+        if (!currentIsHost && data.success && data.gameState) {
+            const oldPhase = currentPhase.kind
+            const oldRound = currentRound
             
             // Log before hydration
             console.log(`[CLIENT] Pre-hydration phase: ${oldPhase}, round: ${oldRound}`)
@@ -373,22 +393,28 @@ export default function JudgeMode() {
               setReadyCount({ completed: data.rolesRevealed, total: data.players.length })
             }
             if (data.room) {
-              setSkipVotes(data.room.skipVotes || 0)
-              if (isHost && data.room.allVotedSkip && gamePhase.kind === 'PlayerTalking') {
-                console.log('All players voted to skip! Auto-progressing...')
+              // Always update skip votes count for everyone to see
+              const newSkipVotes = data.room.skipVotes || 0
+              if (newSkipVotes !== skipVotes) {
+                console.log(`[POLL] Skip votes updated: ${newSkipVotes}`)
+                setSkipVotes(newSkipVotes)
+              }
+              
+              if (currentIsHost && data.room.allVotedSkip && currentPhase.kind === 'PlayerTalking') {
+                console.log('[HOST] All players voted to skip! Auto-progressing to Discussion...')
                 g.startDiscussion()
                 await pushSnapshot(useGame.getState())
               }
             }
             // Check for role reveal completion (host advances game)
-            if (isHost && gamePhase.kind === 'RoleAssignment' && data.allRolesRevealed) {
+            if (currentIsHost && currentPhase.kind === 'RoleAssignment' && data.allRolesRevealed) {
               console.log('[HOST] All roles revealed! Advancing to night...')
               g.proceedFromRoleReveal()
               await pushSnapshot(useGame.getState())
             }
             
             // Check for night action completion (host advances game)
-            if (isHost && gamePhase.kind === 'NightStart' && data.allNightActionsComplete) {
+            if (currentIsHost && currentPhase.kind === 'NightStart' && data.allNightActionsComplete) {
               console.log('[HOST] All night actions complete! Resolving night...')
               
               // Fetch and apply night actions
@@ -417,20 +443,26 @@ export default function JudgeMode() {
             }
             
             // Check for discussion timer expiry (host advances game)
-            if (isHost && gamePhase.kind === 'PlayerTalking' && gamePhase.endsAt <= Date.now()) {
-              console.log('[HOST] Discussion time expired! Moving to judge discussion...')
-              g.startDiscussion()
-              await pushSnapshot(useGame.getState())
+            if (currentIsHost && currentPhase.kind === 'PlayerTalking') {
+              const now = Date.now()
+              const endsAt = currentPhase.endsAt
+              if (endsAt && endsAt <= now) {
+                console.log(`[HOST] PlayerTalking timer expired! (${endsAt} <= ${now}) Moving to Discussion...`)
+                g.startDiscussion()
+                await pushSnapshot(useGame.getState())
+              }
             }
           }
-        }
       } catch (error) {
         console.error('Game state polling error:', error)
       }
-    }, 1500) // Slightly reduced frequency to cut API load
+    }, 3000) // Reduced to 3s to prevent lag
     
-    return () => clearInterval(interval)
-  }, [phase, isHost, roomCode, deviceId, gamePhase.kind, gameRound, pushSnapshot])
+    return () => {
+      console.log('[GAME POLL] Stopping game state polling')
+      clearInterval(interval)
+    }
+  }, [phase, isHost, roomCode, deviceId])
   
   // Create room (host)
   const createRoom = async () => {
@@ -500,10 +532,11 @@ export default function JudgeMode() {
     }
   }
   
-  // Poll for room updates
+  // Poll for room updates (lobby only)
   useEffect(() => {
-    if (phase !== 'lobby') return
+    if (phase !== 'lobby' || !roomCode) return
     
+    console.log('[LOBBY POLL] Starting lobby polling')
     const interval = setInterval(async () => {
       try {
         const response = await fetch('/api/room', {
@@ -516,9 +549,18 @@ export default function JudgeMode() {
           })
         })
         
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success) {
+        if (!response.ok) {
+          if (response.status === 404) {
+            console.error('[LOBBY POLL] Room not found - returning to join screen')
+            setPhase('join')
+            setRoomCode('')
+            return
+          }
+          return
+        }
+        
+        const data = await response.json()
+        if (data.success) {
             const newPlayers = data.players || []
             console.log(`[LOBBY POLL] Players in room: ${newPlayers.length}`, newPlayers.map((p: any) => p.name))
             setRoomPlayers(newPlayers)
@@ -526,19 +568,12 @@ export default function JudgeMode() {
             
             // Check if game has started and host snapshot is ready
             if (data.gamePhase === 'playing') {
-              console.log('🎮 Game phase is playing!')
-              console.log('   Has gameState:', !!data.gameState)
-              console.log('   GameState:', data.gameState)
-              
               if (data.gameState) {
-                console.log('✅ Hydrating snapshot and switching to playing phase...')
+                console.log('✅ Game started, switching to playing phase')
                 g.reset()
                 g.hydrateFromHost(data.gameState)
                 setPhase('playing')
-                clearInterval(interval)
-                return
-              } else {
-                console.log('⏳ Waiting for host to push gameState...')
+                return // Exit early, interval will be cleaned up
               }
             }
             
@@ -557,14 +592,16 @@ export default function JudgeMode() {
               }
             }
           }
-        }
       } catch (error) {
         console.error('Failed to sync room state:', error)
       }
-    }, 2000) // Poll every 2 seconds
+    }, 3000) // Poll every 3 seconds to reduce load
     
-    return () => clearInterval(interval)
-  }, [phase, roomCode, deviceId, playerId, isHost, gamePhase.kind]) // Added gamePhase.kind for proper re-renders
+    return () => {
+      console.log('[LOBBY POLL] Stopping lobby polling')
+      clearInterval(interval)
+    }
+  }, [phase, roomCode, deviceId, playerId, isHost])
   
   // Leave room
   const leaveRoom = async () => {
@@ -1427,34 +1464,61 @@ export default function JudgeMode() {
             
             <div className="mt-6 flex flex-col items-center gap-3">
               <Button
-                onClick={async () => {
-                  if (hasVotedSkip) return
+                onClick={async (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
                   
+                  if (hasVotedSkip) {
+                    console.log('[SKIP] Already voted, ignoring click')
+                    return
+                  }
+                  
+                  console.log('[SKIP] Submitting skip vote...')
                   setHasVotedSkip(true)
-                  const response = await fetch('/api/room', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      action: 'vote_skip',
-                      roomCode,
-                      deviceId
-                    })
-                  })
+                  hasVotedSkipRef.current = true
                   
-                  if (response.ok) {
-                    const data = await response.json()
-                    if (data.success) {
-                      setSkipVotes(data.skipVotes)
+                  try {
+                    const response = await fetch('/api/room', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'vote_skip',
+                        roomCode,
+                        deviceId
+                      })
+                    })
+                    
+                    if (response.ok) {
+                      const data = await response.json()
+                      if (data.success) {
+                        console.log(`[SKIP] Vote recorded: ${data.skipVotes}/${data.total}`)
+                        setSkipVotes(data.skipVotes)
+                        
+                        // Force immediate state sync for all clients
+                        if (data.gameState && !isHost) {
+                          console.log('[SKIP] Syncing game state after vote')
+                          g.hydrateFromHost(data.gameState)
+                        }
+                      }
+                    } else {
+                      console.error('[SKIP] Failed to submit vote:', response.status)
+                      setHasVotedSkip(false)
+                      hasVotedSkipRef.current = false
                     }
+                  } catch (error) {
+                    console.error('[SKIP] Error submitting vote:', error)
+                    setHasVotedSkip(false)
+                    hasVotedSkipRef.current = false
                   }
                 }}
                 disabled={hasVotedSkip}
-                className={`${hasVotedSkip ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`${hasVotedSkip ? 'opacity-50 cursor-not-allowed' : ''} touch-manipulation`}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
                 {hasVotedSkip ? '✓ Ready to Continue' : 'Ready to Continue'}
               </Button>
               <div className="text-sm opacity-70">
-                {skipVotes}/{alivePlayers.length} players ready
+                {skipVotes}/{roomPlayers.length} players ready
               </div>
             </div>
           </div>

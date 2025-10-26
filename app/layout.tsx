@@ -4,6 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_APP_NAME || 'SuperMafia',
   description: 'AI-hosted Werewolf',
+  icons: {
+    icon: '/SuperMafiaLogo.png',
+    shortcut: '/SuperMafiaLogo.png',
+    apple: '/SuperMafiaLogo.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
