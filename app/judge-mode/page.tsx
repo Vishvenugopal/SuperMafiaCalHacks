@@ -5,16 +5,16 @@
  * Based on the original Werewolf game but with these changes:
  * - Multi-device: Players join via room codes
  * - Judge voting: Only the AI Judge votes (not players)
- * - Players talk to Judge during discussion using LiveKit voice
- * - Narrator still exists for game flow
+ * - Players talk to Judge during discussion using voice
  * - Judge makes elimination decisions
+ * - No narrator - simplified flow
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useGame } from '@/store/game'
 import { Player } from '@/lib/types'
-import { ttsSpeak, isTtsAvailable, startSttStream, stopSttStream, hasMicrophonePermission, requestMicrophonePermission } from '@/lib/voice'
+import { startSttStream, stopSttStream, hasMicrophonePermission } from '@/lib/voice'
 
 const GAME_TITLE_STYLE = {
   fontFamily: 'Boldonse, sans-serif',
@@ -77,20 +77,14 @@ export default function JudgeMode() {
   const [hostId, setHostId] = useState('')
   const [revealing, setRevealing] = useState(false)
   const [readyCount, setReadyCount] = useState<{completed:number,total:number}>({completed:0,total:0})
-  const [announcedPhase, setAnnouncedPhase] = useState<string>('')
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>([])
   const [myPlayerName, setMyPlayerName] = useState('')
   
   // Judge state
   const [isTalking, setIsTalking] = useState(false)
   const [judgeResponse, setJudgeResponse] = useState('')
-  const [hostResponse, setHostResponse] = useState<string>('')
-  const [hostProvider, setHostProvider] = useState<string>('')
   const [userTranscript, setUserTranscript] = useState('')
-  const [listening, setListening] = useState(false)
-  const kbHoldingRef = useRef(false)
   const now = useNow(200)
-  const timerCheckedRef = useRef(false)
   
   // Phase-specific state
   const [roleRevealed, setRoleRevealed] = useState(false)
@@ -102,7 +96,6 @@ export default function JudgeMode() {
   const [showNightIntro, setShowNightIntro] = useState(false)
   const [nightActionSubmitted, setNightActionSubmitted] = useState(false)
   const [peekCompleted, setPeekCompleted] = useState(false)
-  const [playerTalkingNarrated, setPlayerTalkingNarrated] = useState(false)
   const [skipVotes, setSkipVotes] = useState(0)
   const [hasVotedSkip, setHasVotedSkip] = useState(false)
   const hasVotedSkipRef = useRef(false) // Persistent ref to prevent polling reset
@@ -141,64 +134,6 @@ export default function JudgeMode() {
     }
   }, [roomCode, deviceId])
   
-  // Helper function to get narrator response
-  const getNarratorResponse = useCallback(async (prompt: string) => {
-    try {
-      const gameContext = {
-        phase: gamePhase,
-        round: g.round,
-        players: g.players.map(p => ({ name: p.name, alive: p.alive })),
-        alivePlayers: g.players.filter(p => p.alive).length,
-        recentEvents: g.eventLog.slice(-3)
-      }
-      
-      const res = await fetch('/api/host', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ prompt, context: gameContext, settings: g.settings }) 
-      })
-      const data = await res.json()
-      const answer = String(data.answer || '')
-      setHostResponse(answer)
-      setHostProvider(data.provider || 'unknown')
-      await ttsSpeak(answer, g.settings.voicePersonality)
-    } catch (error) {
-      console.error('Narrator error:', error)
-    }
-  }, [gamePhase, g.round, g.players, g.eventLog, g.settings])
-  
-  // Narrator announcements for phase changes
-  useEffect(() => {
-    if (!isHost) return
-    if (announcedPhase === gamePhase.kind) return
-    setAnnouncedPhase(gamePhase.kind)
-    if (gamePhase.kind === 'DayStart') {
-      const round = g.round
-      const events = g.eventLog.filter(e => e.round === round && e.public)
-      const death = events.find(e => e.type === 'night_kill')
-      
-      if (death) {
-        const victim = g.players.find(p => p.id === death.data.playerId)
-        getNarratorResponse(`The village awakens to find ${victim?.name} dead. Announce this death dramatically and ominously in 1-2 sentences.`)
-      } else {
-        getNarratorResponse('Everyone survived the night. Express relief but remind them the danger remains. 1-2 sentences.')
-      }
-    } else if (gamePhase.kind === 'NightStart') {
-      getNarratorResponse('Night falls over the village. Warn them of the dangers ahead. Be ominous. 1-2 sentences.')
-    } else if (gamePhase.kind === 'LynchResolve') {
-      const round = g.round
-      const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
-      if (lynch) {
-        const victim = g.players.find(p => p.id === lynch.data.playerId)
-        const roleDisplay = victim?.role === 'werewolf' ? 'a Werewolf' : 
-                           victim?.role === 'seer' ? 'the Seer' : 
-                           victim?.role === 'medic' ? 'the Medic' : 'a Villager'
-        getNarratorResponse(`${victim?.name} has been eliminated by vote. Reveal that they were ${roleDisplay}. Announce their fate and role dramatically. 1-2 sentences.`)
-      } else {
-        getNarratorResponse('The village could not agree on who to eliminate. Express the tension. 1-2 sentences.')
-      }
-    }
-  }, [gamePhase.kind, g.round, g.eventLog, g.players, getNarratorResponse, isHost, announcedPhase])
   
   // Phase sync monitor - ensures all players stay in sync
   useEffect(() => {
@@ -242,7 +177,6 @@ export default function JudgeMode() {
       setHasVotedSkip(false)
       hasVotedSkipRef.current = false
       setSkipVotes(0)
-      setPlayerTalkingNarrated(false)
       
       // Reset skip votes tracking on server (host only)
       if (isHost) {
@@ -265,14 +199,7 @@ export default function JudgeMode() {
       setDayRevealShown(false)
       setDayRevealDone(false)
     }
-    
-    // Play narrator when entering PlayerTalking (host only to avoid duplicate TTS)
-    if (gamePhase.kind === 'PlayerTalking' && !playerTalkingNarrated && isHost) {
-      setPlayerTalkingNarrated(true)
-      ttsSpeak('The village gathers to discuss. Share your suspicions and figure out who the werewolf might be.', g.settings.voicePersonality)
-        .catch(err => console.error('TTS error:', err))
-    }
-  }, [gamePhase.kind, phase, isHost, playerTalkingNarrated, roomCode, deviceId])
+  }, [gamePhase.kind, phase, isHost, roomCode, deviceId])
   
   // (Removed) Separate skip-vote polling consolidated into unified polling
   
@@ -783,7 +710,6 @@ export default function JudgeMode() {
 
       const answer = String(data.answer || 'I have noted your testimony.')
       setJudgeResponse(answer)
-      await ttsSpeak(answer)
     } catch (error) {
       console.error('Judge error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -805,12 +731,12 @@ export default function JudgeMode() {
           </h1>
 
           <div className="glass rounded-2xl p-4 text-sm text-gray-300 space-y-2">
-            <div className="font-bold text-white">🎮 Full Werewolf + AI Judge</div>
+            <div className="font-bold text-white">⚖️ Werewolf with AI Judge</div>
             <ul className="space-y-1 text-xs">
-              <li>• Everyone on their own device</li>
-              <li>• Full roles and game phases</li>
-              <li>• AI Judge decides who to eliminate</li>
-              <li>• Talk to Judge with voice</li>
+              <li>• Multi-device gameplay</li>
+              <li>• Full roles and night actions</li>
+              <li>• AI Judge makes elimination decisions</li>
+              <li>• Voice interaction with Judge</li>
             </ul>
           </div>
 
@@ -1151,21 +1077,8 @@ export default function JudgeMode() {
   if (gamePhase.kind === 'NightStart') {
     const alive = g.players.filter(p => p.alive)
     
-    // If I'm not alive, auto-mark as complete and show waiting screen
+    // If I'm not alive, show waiting screen (auto-mark handled by useEffect above)
     if (!amIAlive) {
-      useEffect(() => {
-        // Auto-mark dead players as complete
-        fetch('/api/room', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'mark_night_action_complete',
-            roomCode,
-            deviceId
-          })
-        })
-      }, [roomCode, deviceId])
-      
       return (
         <main className="min-h-screen p-6 flex items-center justify-center">
           <div className="max-w-md w-full space-y-6">
@@ -1932,35 +1845,6 @@ export default function JudgeMode() {
           </div>
         </div>
       </main>
-      
-      {/* Narrator/Host Response Display */}
-      {hostResponse && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto glass-strong rounded-2xl p-4 animate-fadeIn z-50">
-          <div className="flex items-start gap-3">
-            <div className="text-2xl">🎭</div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-bold gradient-text">Narrator</span>
-                {hostProvider && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${hostProvider === 'janitorai-error' ? 'bg-red-500/30 text-red-300' : 'bg-purple-500/30 text-purple-300'}`}>
-                    {hostProvider === 'baseten' ? '🤖' : 
-                     hostProvider === 'janitorai' ? '🎭' : 
-                     hostProvider === 'janitorai-error' ? '❌' :
-                     hostProvider === 'mock' ? '📝' : '⚠️'}
-                  </span>
-                )}
-              </div>
-              <p className="text-white text-sm leading-relaxed">{hostResponse}</p>
-            </div>
-            <button 
-              onClick={() => setHostResponse('')}
-              className="text-gray-400 hover:text-white text-xl leading-none transition-colors"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
     </>
   )
 }
