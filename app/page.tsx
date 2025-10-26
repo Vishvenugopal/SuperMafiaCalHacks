@@ -26,7 +26,7 @@ function GameModeCard({ title, description, icon, href, locked = false }: GameMo
     <div className={`relative glass-strong rounded-3xl p-8 transition-all duration-500 h-full flex flex-col items-center justify-center animate-fadeIn ${
       locked 
         ? 'opacity-50 cursor-not-allowed' 
-        : 'hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/30 cursor-pointer animate-float'
+        : 'hover:scale-105 cursor-pointer animate-float'
     }`}>
       {locked && (
         <div className="absolute top-4 right-4 text-3xl opacity-70">🔒</div>

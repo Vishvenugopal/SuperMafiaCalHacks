@@ -326,7 +326,10 @@ export default function Home() {
       const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
       if (lynch) {
         const victim = g.players.find(p => p.id === lynch.data.playerId)
-        getNarratorResponse(`${victim?.name} has been eliminated by vote. Announce their fate dramatically. 1-2 sentences.`)
+        const roleDisplay = victim?.role === 'werewolf' ? 'a Werewolf' : 
+                           victim?.role === 'seer' ? 'the Seer' : 
+                           victim?.role === 'medic' ? 'the Medic' : 'a Villager'
+        getNarratorResponse(`${victim?.name} has been eliminated by vote. Reveal that they were ${roleDisplay}. Announce their fate and role dramatically. 1-2 sentences.`)
       } else {
         getNarratorResponse('The village could not agree on who to eliminate. Express the tension. 1-2 sentences.')
       }
@@ -560,12 +563,32 @@ export default function Home() {
       <div className="space-y-6">
         {!roleRevealed ? (
           <div className="space-y-4">
-            <div className="text-center text-2xl">Pass to {player.name}</div>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                {player.avatarDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={player.avatarDataUrl} alt={player.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-5xl">🙂</div>
+                )}
+              </div>
+              <div className="text-center text-2xl font-bold">{player.name}</div>
+            </div>
             <Button className="w-full" onClick={() => setRoleRevealed(true)}>Tap to reveal role</Button>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="text-center text-2xl">{player.name}</div>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                {player.avatarDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={player.avatarDataUrl} alt={player.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-5xl">🙂</div>
+                )}
+              </div>
+              <div className="text-center text-2xl font-bold">{player.name}</div>
+            </div>
             <div className="text-center text-4xl">{role === 'werewolf' ? '🐺 Werewolf' : role === 'seer' ? '🔮 Seer' : role === 'medic' ? '💉 Medic' : '🧑 Villager'}</div>
             {g.ui.roleRevealIndex + 1 < g.ui.roleRevealOrder.length ? (
               <Button className="w-full" onClick={() => { setRoleRevealed(false); g.nextRoleReveal() }}>Done, pass to next</Button>
@@ -636,7 +659,17 @@ export default function Home() {
       <div className="space-y-4">
         {!nightRevealed ? (
           <>
-            <div className="text-center text-2xl">Pass to {currentPlayer.name}</div>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                {currentPlayer.avatarDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={currentPlayer.avatarDataUrl} alt={currentPlayer.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-5xl">🙂</div>
+                )}
+              </div>
+              <div className="text-center text-2xl font-bold">{currentPlayer.name}</div>
+            </div>
             <Button className="w-full" onClick={() => setNightRevealed(true)}>Tap to see your role</Button>
           </>
         ) : (
@@ -651,8 +684,17 @@ export default function Home() {
                       g.chooseProtect(p.id)
                       setNightPlayerIndex(nightPlayerIndex + 1)
                       setNightRevealed(false)
-                    }} className="bg-white/10 rounded-xl p-3">
-                      <div className="text-center">{p.name}</div>
+                    }} className="bg-white/10 rounded-xl p-3 hover:bg-white/20 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                          {p.avatarDataUrl ? (
+                            <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="text-2xl">🙂</div>
+                          )}
+                        </div>
+                        <div className="text-center text-sm">{p.name}</div>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -673,8 +715,17 @@ export default function Home() {
                       }
                       setNightPlayerIndex(nextIdx)
                       setNightRevealed(false)
-                    }} className="bg-white/10 rounded-xl p-3">
-                      <div className="text-center">{p.name}</div>
+                    }} className="bg-white/10 rounded-xl p-3 hover:bg-white/20 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                          {p.avatarDataUrl ? (
+                            <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="text-2xl">🙂</div>
+                          )}
+                        </div>
+                        <div className="text-center text-sm">{p.name}</div>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -689,8 +740,17 @@ export default function Home() {
                       g.choosePeek(p.id)
                       const targetRole = p.role || 'villager'
                       setPeekResult({ playerId: p.id, role: targetRole })
-                    }} className="bg-white/10 rounded-xl p-3">
-                      <div className="text-center">{p.name}</div>
+                    }} className="bg-white/10 rounded-xl p-3 hover:bg-white/20 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 overflow-hidden flex items-center justify-center">
+                          {p.avatarDataUrl ? (
+                            <img src={p.avatarDataUrl} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="text-2xl">🙂</div>
+                          )}
+                        </div>
+                        <div className="text-center text-sm">{p.name}</div>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -820,7 +880,7 @@ export default function Home() {
                 if (ok) setListening(true)
               }
             }}
-            className={`w-24 h-24 rounded-full flex items-center justify-center select-none ${listening ? 'bg-red-500 animate-pulse' : 'bg-white text-black'} shadow-lg active:scale-95 transition-all`}
+            className={`w-24 h-24 rounded-full flex items-center justify-center select-none ${listening ? 'bg-red-500 animate-pulse' : 'bg-white text-black'} active:scale-95 transition-all`}
           >
             <span className="text-3xl">🎙️</span>
           </button>
@@ -871,6 +931,10 @@ export default function Home() {
     const lynch = [...g.eventLog].reverse().find(e => e.type === 'lynch' && e.round === round)
     const victim = g.players.find(p => p.id === lynch?.data.playerId)
     
+    const roleDisplay = victim?.role === 'werewolf' ? '🐺 Werewolf' : 
+                       victim?.role === 'seer' ? '🔮 Seer' : 
+                       victim?.role === 'medic' ? '💉 Medic' : '🧑 Villager'
+    
     return (
       <div className="space-y-6">
         <div className="text-center text-3xl font-bold mb-4">⚖️ The Village Has Decided</div>
@@ -882,7 +946,8 @@ export default function Home() {
               <div className="text-center text-4xl">🔥</div>
               <div className="text-center text-3xl font-bold text-orange-400">{victim.name}</div>
               <div className="text-center text-xl text-orange-300">has been eliminated</div>
-              <div className="text-center text-sm opacity-70">Voted out by the village</div>
+              <div className="text-center text-2xl font-bold text-yellow-300 mt-2">{roleDisplay}</div>
+              <div className="text-center text-sm opacity-70">Their role has been revealed</div>
             </div>
           </div>
         ) : (
@@ -929,7 +994,7 @@ export default function Home() {
       {/* Floating Instructions Button */}
       <button
         onClick={() => setShowInstructions(true)}
-        className="fixed top-4 right-4 w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold glass-strong hover:scale-110 active:scale-95 transition-all z-40 shadow-lg"
+        className="fixed top-4 right-4 w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold glass-strong hover:scale-110 active:scale-95 transition-all z-40"
         title="Show Instructions"
       >
         ?
@@ -937,7 +1002,7 @@ export default function Home() {
       
       {/* AI Host Response Display */}
       {hostResponse && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto glass-strong rounded-2xl p-4 shadow-2xl animate-fadeIn z-50">
+        <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto glass-strong rounded-2xl p-4 animate-fadeIn z-50">
           <div className="flex items-start gap-3">
             <div className="text-2xl">🎭</div>
             <div className="flex-1">
