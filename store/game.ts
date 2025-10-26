@@ -33,36 +33,6 @@ type Actions = {
   reset: () => void
 }
 
-/**
- * Error types for game operations
- */
-export class GameError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public details?: any
-  ) {
-    super(message)
-    this.name = 'GameError'
-  }
-}
-
-export class InsufficientPlayersError extends GameError {
-  constructor(required: number, actual: number) {
-    super(
-      `Need at least ${required} players to start game`,
-      'INSUFFICIENT_PLAYERS',
-      { required, actual }
-    )
-  }
-}
-
-export class GameStateError extends GameError {
-  constructor(message: string, details?: any) {
-    super(message, 'GAME_STATE_ERROR', details)
-  }
-}
-
 export type Store = GameState & { ui: UIState } & Actions
 
 const defaultSettings: GameSettings = {
@@ -132,20 +102,15 @@ export const useGame = create<Store>((set, get) => ({
   updateSettings: (patch: Partial<GameSettings>) => set((s: Store) => ({ settings: { ...s.settings, ...patch } })),
 
   updateRolesEnabled: (role: RoleId, count: number) =>
-    set((s: Store) => { 
-      const newCount = Math.max(0, Math.floor(count))
-      return { settings: { ...s.settings, rolesEnabled: { ...s.settings.rolesEnabled, [role]: newCount } } }
-    }),
+    set((s: Store) => ({ settings: { ...s.settings, rolesEnabled: { ...s.settings.rolesEnabled, [role]: Math.max(0, Math.floor(count)) } } })),
 
   setPlayersFromNames: (names: string[]) =>
     set(() => ({ players: names.map(name => ({ id: rid(), name, alive: true })) })),
 
   startGameWithSeed: (seed: number, settingsOverride?: Partial<GameSettings>) => {
     const s = get()
-    if (s.players.length < 3) {
-      throw new InsufficientPlayersError(3, s.players.length)
-    }
     const settings: GameSettings = { ...s.settings, ...(settingsOverride || {}) }
+    if (s.players.length < 3) return
     const players = assignRoles(s.players, settings, seed)
     const order = players.map(p => p.id)
     set({ seed, settings, players, phase: { kind: 'RoleAssignment' }, ui: { roleRevealOrder: order, roleRevealIndex: 0 }, round: 1 })
@@ -153,9 +118,7 @@ export const useGame = create<Store>((set, get) => ({
 
   startGame: () => {
     const s = get()
-    if (s.players.length < 3) {
-      throw new InsufficientPlayersError(3, s.players.length)
-    }
+    if (s.players.length < 3) return
     const seed = s.seed
     const players = assignRoles(s.players, s.settings, seed)
     // Keep original player order for role reveals (don't shuffle)
@@ -208,9 +171,7 @@ export const useGame = create<Store>((set, get) => ({
 
   castVoteForCurrent: (targetId: string | null) => {
     const s = get()
-    if (s.phase.kind !== 'Voting') {
-      throw new GameStateError('Cannot cast vote when not in voting phase', { currentPhase: s.phase.kind })
-    }
+    if (s.phase.kind !== 'Voting') return
     const voter = s.phase.voterQueue[s.phase.currentIndex]
     const votes = { ...s.phase.votes, [voter]: targetId }
     let idx = s.phase.currentIndex + 1
@@ -224,9 +185,7 @@ export const useGame = create<Store>((set, get) => ({
 
   resolveVote: () => {
     const s = get()
-    if (s.phase.kind !== 'Voting') {
-      throw new GameStateError('Cannot resolve vote when not in voting phase', { currentPhase: s.phase.kind })
-    }
+    if (s.phase.kind !== 'Voting') return
     const tally = new Map<string, number>()
     for (const [, t] of Object.entries(s.phase.votes) as Array<[string, string | null]>) {
       if (!t) continue

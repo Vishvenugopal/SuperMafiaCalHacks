@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useGame } from '@/store/game'
 import { Player } from '@/lib/types'
-import { ttsSpeak, isTtsAvailable, startSttStream, stopSttStream, hasMicrophonePermission, requestMicrophonePermission } from '@/lib/voice'
+import { ttsSpeak, isTtsAvailable, startSttStream, stopSttStream } from '@/lib/voice'
 
 const GAME_TITLE_STYLE = {
   fontFamily: 'Boldonse, sans-serif',
@@ -326,13 +326,8 @@ export default function JudgeMode() {
     if (phase !== 'playing' || !roomCode) return
     
     console.log('[GAME POLL] Starting game state polling')
-    let abortController = new AbortController()
-    
     const interval = setInterval(async () => {
       try {
-        // Check if we're still in playing phase (avoid stale closures)
-        if (phase !== 'playing') return
-        
         // Read fresh state at the start of each poll
         const currentState = useGame.getState()
         const currentPhase = currentState.phase
@@ -342,8 +337,7 @@ export default function JudgeMode() {
         const response = await fetch('/api/room', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'get_state', roomCode, deviceId }),
-          signal: abortController.signal
+          body: JSON.stringify({ action: 'get_state', roomCode, deviceId })
         })
         
         if (!response.ok) {
@@ -351,7 +345,6 @@ export default function JudgeMode() {
             console.error('[GAME POLL] Room not found - stopping polling and returning to join screen')
             setPhase('join')
             setRoomCode('')
-            clearInterval(interval)
             return // Stop polling
           }
           console.error('[GAME POLL] Server error:', response.status)
@@ -409,12 +402,8 @@ export default function JudgeMode() {
               
               if (currentIsHost && data.room.allVotedSkip && currentPhase.kind === 'PlayerTalking') {
                 console.log('[HOST] All players voted to skip! Auto-progressing to Discussion...')
-                try {
-                  g.startDiscussion()
-                  await pushSnapshot(useGame.getState())
-                } catch (error) {
-                  console.error('[HOST] Error advancing to Discussion:', error)
-                }
+                g.startDiscussion()
+                await pushSnapshot(useGame.getState())
               }
             }
             // Check for role reveal completion (host advances game)
@@ -459,27 +448,18 @@ export default function JudgeMode() {
               const endsAt = currentPhase.endsAt
               if (endsAt && endsAt <= now) {
                 console.log(`[HOST] PlayerTalking timer expired! (${endsAt} <= ${now}) Moving to Discussion...`)
-                try {
-                  g.startDiscussion()
-                  await pushSnapshot(useGame.getState())
-                } catch (error) {
-                  console.error('[HOST] Error advancing to Discussion:', error)
-                }
+                g.startDiscussion()
+                await pushSnapshot(useGame.getState())
               }
             }
           }
-      } catch (error: any) {
-        if (error.name === 'AbortError') {
-          console.log('[GAME POLL] Request aborted (cleanup)')
-          return
-        }
+      } catch (error) {
         console.error('Game state polling error:', error)
       }
     }, 3000) // Reduced to 3s to prevent lag
     
     return () => {
       console.log('[GAME POLL] Stopping game state polling')
-      abortController.abort()
       clearInterval(interval)
     }
   }, [phase, isHost, roomCode, deviceId])
@@ -709,38 +689,24 @@ export default function JudgeMode() {
 
   // Talk to Judge (voice interaction)
   const handleStartTalking = async () => {
-    // Check microphone permission
-    const hasPermission = await hasMicrophonePermission()
-    if (!hasPermission) {
-      setIsTalking(false)
-      setJudgeResponse('Microphone permission required. Please allow microphone access in your browser settings.')
-      return
-    }
-
     setIsTalking(true)
     setJudgeResponse('Judge is listening...')
     setUserTranscript('')
     
-    try {
-      // Start voice recognition
-      const ok = startSttStream(
-        (partial) => setUserTranscript(partial),
-        async (finalText) => {
-          setIsTalking(false)
-          if (finalText && finalText.trim()) {
-            await handleJudgeQuestion(finalText.trim())
-          }
-        }
-      )
-      
-      if (!ok) {
+    // Start voice recognition
+    const ok = startSttStream(
+      (partial) => setUserTranscript(partial),
+      async (finalText) => {
         setIsTalking(false)
-        setJudgeResponse('Could not start microphone. Please check your browser supports speech recognition.')
+        if (finalText && finalText.trim()) {
+          await handleJudgeQuestion(finalText.trim())
+        }
       }
-    } catch (error) {
-      console.error('Error starting microphone:', error)
+    )
+    
+    if (!ok) {
       setIsTalking(false)
-      setJudgeResponse('Failed to start voice recognition')
+      setJudgeResponse('Could not start microphone')
     }
   }
 
@@ -771,23 +737,13 @@ export default function JudgeMode() {
         })
       })
       
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`)
-      }
-
       const data = await res.json()
-      
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
       const answer = String(data.answer || 'I have noted your testimony.')
       setJudgeResponse(answer)
       await ttsSpeak(answer)
     } catch (error) {
       console.error('Judge error:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      setJudgeResponse(`The Judge encountered an error: ${errorMessage}. Please try again.`)
+      setJudgeResponse('The Judge is temporarily unavailable.')
     }
   }
 
@@ -1562,7 +1518,7 @@ export default function JudgeMode() {
                 {hasVotedSkip ? '✓ Ready to Continue' : 'Ready to Continue'}
               </Button>
               <div className="text-sm opacity-70">
-                {skipVotes}/{g.players.filter(p => p.alive).length} players ready
+                {skipVotes}/{roomPlayers.length} players ready
               </div>
             </div>
           </div>
@@ -1647,12 +1603,12 @@ export default function JudgeMode() {
           {isHost && (
             <Button
               onClick={async () => {
-                // Move to voting phase and trigger judge decision
-                await makeJudgeDecision()
+                g.startVoting()
+                await pushSnapshot(useGame.getState())
               }}
               className="w-full bg-gradient-to-r from-red-600 to-red-800 text-white"
             >
-              Judge Decides Now
+              End Discussion → Judge Decides
             </Button>
           )}
         </div>
@@ -1662,11 +1618,6 @@ export default function JudgeMode() {
 
   // AI Judge makes elimination decision
   const makeJudgeDecision = async () => {
-    if (gamePhase.kind !== 'Discussion') {
-      console.error('[HOST] Cannot make judge decision outside Discussion phase')
-      return
-    }
-
     try {
       const alivePlayers = g.players.filter(p => p.alive)
       
@@ -1687,104 +1638,52 @@ export default function JudgeMode() {
         })
       })
       
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`)
-      }
-
       const data = await res.json()
       const decision = String(data.answer || '').trim()
       
-      console.log('[JUDGE] Decision received:', decision)
-      
-      // First, enter Voting phase
-      g.startVoting()
-      await pushSnapshot(useGame.getState())
-      
-      // Wait a bit for state to sync
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // Now cast votes based on decision
-      const currentPhase = useGame.getState().phase
-      if (currentPhase.kind !== 'Voting') {
-        throw new Error('Not in voting phase')
-      }
-      
-      // Determine who to vote for
-      let targetId: string | null = null
-      
+      // Parse decision
       if (decision.toUpperCase().includes('ABSTAIN')) {
-        // Judge abstains - no target
-        targetId = null
+        // Judge abstains - simulate abstain vote
+        if (gamePhase.kind === 'Voting') {
+          for (let i = 0; i < gamePhase.voterQueue.length; i++) {
+            g.castVoteForCurrent(null)
+          }
+        }
       } else {
         // Find player by name in decision
         const targetPlayer = alivePlayers.find(p => 
           decision.toLowerCase().includes(p.name.toLowerCase())
         )
         
-        if (targetPlayer) {
-          targetId = targetPlayer.id
+        if (targetPlayer && gamePhase.kind === 'Voting') {
+          // Cast all votes for this player
+          for (let i = 0; i < gamePhase.voterQueue.length; i++) {
+            g.castVoteForCurrent(targetPlayer.id)
+          }
         } else {
-          console.warn('[JUDGE] Could not parse target from decision:', decision)
-          targetId = null // Default to abstain
-        }
-      }
-      
-      // Cast votes directly for all voters
-      let votesToCast = { ...currentPhase.votes }
-      for (const voterId of currentPhase.voterQueue) {
-        votesToCast[voterId] = targetId
-      }
-      
-      // Update the state directly
-      useGame.setState((s: any) => {
-        if (s.phase.kind === 'Voting') {
-          return {
-            phase: {
-              ...s.phase,
-              votes: votesToCast,
-              currentIndex: s.phase.voterQueue.length // Mark all as voted
+          // Default to abstain if can't parse
+          if (gamePhase.kind === 'Voting') {
+            for (let i = 0; i < gamePhase.voterQueue.length; i++) {
+              g.castVoteForCurrent(null)
             }
           }
         }
-        return s
-      })
+      }
       
-      // Resolve the vote and push snapshot
+      // Resolve the vote
       g.resolveVote()
       await pushSnapshot(useGame.getState())
     } catch (error) {
       console.error('Judge decision error:', error)
-      
-      // Start voting even on error so game can continue
-      try {
-        g.startVoting()
-        await new Promise(resolve => setTimeout(resolve, 500))
-        const currentPhase = useGame.getState().phase
-        if (currentPhase.kind === 'Voting') {
-          // Default to abstain on error - cast votes directly
-          let votesToCast = { ...currentPhase.votes }
-          for (const voterId of currentPhase.voterQueue) {
-            votesToCast[voterId] = null
-          }
-          
-          useGame.setState((s: any) => {
-            if (s.phase.kind === 'Voting') {
-              return {
-                phase: {
-                  ...s.phase,
-                  votes: votesToCast,
-                  currentIndex: s.phase.voterQueue.length
-                }
-              }
-            }
-            return s
-          })
+      // Default to abstain on error
+      if (gamePhase.kind === 'Voting') {
+        const firstVoter = Object.keys(gamePhase.votes)[0]
+        if (firstVoter) {
+          g.castVoteForCurrent(null)
         }
-        g.resolveVote()
-        await pushSnapshot(useGame.getState())
-      } catch (innerError) {
-        console.error('[JUDGE] Failed to handle error case:', innerError)
       }
+      g.resolveVote()
+      await pushSnapshot(useGame.getState())
     }
   }
 
@@ -1796,9 +1695,11 @@ export default function JudgeMode() {
           <div className="glass-strong rounded-3xl p-8 space-y-6 text-center">
             <div className="text-5xl animate-pulse">⚖️</div>
             <div className="text-2xl font-bold">The Judge is Deliberating</div>
-            <div className="text-sm opacity-70">Processing the decision...</div>
-            {!isHost && (
-              <div className="text-xs text-gray-400 mt-4">Waiting for the Judge's decision...</div>
+            <div className="text-sm opacity-70">The AI Judge is analyzing the discussion and making a decision...</div>
+            {isHost && (
+              <Button className="w-full mt-6" onClick={makeJudgeDecision}>
+                Let Judge Decide (Host)
+              </Button>
             )}
           </div>
         </div>

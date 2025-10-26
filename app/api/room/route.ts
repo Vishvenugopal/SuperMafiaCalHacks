@@ -158,19 +158,6 @@ export async function POST(request: Request) {
           console.log(`📊 get_state for room ${roomCode}: phase=${room.gamePhase}, hasGameState=${hasGameState}`)
         }
         
-        // Calculate alive players for skip votes (only count alive players)
-        const alivePlayerIds = new Set<string>()
-        if (room.gameState?.players) {
-          room.gameState.players.forEach((p: any) => {
-            if (p.alive) {
-              alivePlayerIds.add(p.id)
-            }
-          })
-        }
-        
-        // If no game state yet, count all players
-        const totalAlivePlayers = alivePlayerIds.size > 0 ? alivePlayerIds.size : room.players.length
-        
         return NextResponse.json({
           success: true,
           players: room.players,
@@ -183,8 +170,7 @@ export async function POST(request: Request) {
           allRolesRevealed: room.rolesRevealed.size >= room.players.length,
           room: {
             skipVotes: room.skipVotes.size,
-            allVotedSkip: room.skipVotes.size >= totalAlivePlayers,
-            totalAlivePlayers
+            allVotedSkip: room.skipVotes.size >= room.players.length
           }
         })
       }
@@ -402,26 +388,13 @@ export async function POST(request: Request) {
         room.skipVotes.add(deviceId)
         room.lastActivity = Date.now()
         
-        // Calculate alive players for skip votes (only count alive players)
-        const alivePlayerIds = new Set<string>()
-        if (room.gameState?.players) {
-          room.gameState.players.forEach((p: any) => {
-            if (p.alive) {
-              alivePlayerIds.add(p.id)
-            }
-          })
-        }
-        
-        // If no game state yet, count all players
-        const totalAlivePlayers = alivePlayerIds.size > 0 ? alivePlayerIds.size : room.players.length
-        
-        console.log(`Skip vote added: ${deviceId} (${room.skipVotes.size}/${totalAlivePlayers})`)
+        console.log(`Skip vote added: ${deviceId} (${room.skipVotes.size}/${room.players.length})`)
         
         return NextResponse.json({
           success: true,
           skipVotes: room.skipVotes.size,
-          total: totalAlivePlayers,
-          allVotedSkip: room.skipVotes.size >= totalAlivePlayers,
+          total: room.players.length,
+          allVotedSkip: room.skipVotes.size >= room.players.length,
           gameState: room.gameState // Include game state for immediate sync
         })
       }

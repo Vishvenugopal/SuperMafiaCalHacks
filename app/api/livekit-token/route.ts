@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getEnv } from '@/lib/env-validation'
 
 export async function POST(request: Request) {
   try {
-    const apiKey = getEnv('LIVEKIT_API_KEY')
-    const apiSecret = getEnv('LIVEKIT_API_SECRET')
+    const apiKey = process.env.LIVEKIT_API_KEY
+    const apiSecret = process.env.LIVEKIT_API_SECRET
     
     if (!apiKey || !apiSecret) {
-      return NextResponse.json({ 
-        error: 'LiveKit not configured - please set LIVEKIT_API_KEY and LIVEKIT_API_SECRET environment variables' 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'LiveKit not configured' }, { status: 500 })
     }
 
     // Parse request body for room name and identity
