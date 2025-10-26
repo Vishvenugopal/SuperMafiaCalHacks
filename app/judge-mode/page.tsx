@@ -1575,10 +1575,10 @@ export default function JudgeMode() {
 
   // AI Judge makes elimination decision
   const makeJudgeDecision = async () => {
-    if (gamePhase.kind !== 'Discussion') {
+    /*if (gamePhase.kind !== 'Discussion') {
       console.error('[HOST] Cannot make judge decision outside Discussion phase')
       return
-    }
+    }*/
 
     try {
       const alivePlayers = g.players.filter(p => p.alive)
