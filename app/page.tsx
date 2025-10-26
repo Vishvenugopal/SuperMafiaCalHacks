@@ -77,23 +77,10 @@ export default function Home() {
       <div className="max-w-5xl w-full space-y-16 animate-fadeIn">
         {/* Title */}
         <div className="text-center space-y-4">
-          {/* Use big logo; requires SuperMafiaLogo.png in /public */}
-          <div className="mx-auto animate-float" style={{ maxWidth: '100%', display: 'inline-block' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/SuperMafiaLogo.png"
-              alt="SuperMafia"
-              style={{ width: 'min(90vw,1200px)', height: 'auto' }}
-              onError={(e) => {
-                // Fallback to text if logo not found
-                const parent = (e.currentTarget.parentElement)
-                if (parent) {
-                  parent.innerHTML = '<div style="font-family: Boldonse, sans-serif; font-size: 72px;">SuperMafia</div>'
-                }
-              }}
-            />
-          </div>
-          <div className="warm-divider w-48 mx-auto"></div>
+          <h1 className="text-8xl font-bold mb-4 animate-float" style={{...GAME_TITLE_STYLE, display: 'inline-block'}}>
+            SuperMafia
+          </h1>
+          <div className="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-red-500 to-transparent rounded-full"></div>
         </div>
 
         {/* Subtitle */}
