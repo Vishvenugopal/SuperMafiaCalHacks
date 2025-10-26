@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-async function callBaseten(question: string, gameContext?: any): Promise<string> {
+async function callBaseten(question: string, gameContext?: any, personality?: 'default' | 'funny' | 'rap'): Promise<string> {
   const apiKey = process.env.BASETEN_API_KEY
   const modelName = process.env.BASETEN_MODEL_ID || 'zai-org/GLM-4.6'
   
@@ -24,7 +24,7 @@ async function callBaseten(question: string, gameContext?: any): Promise<string>
       messages: [
         {
           role: "system",
-          content: "You are an English-speaking game narrator and host for a Werewolf/Mafia game. Always reply in English, even if the question is in another language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions."
+          content: "You are an English-speaking game narrator and host for a Werewolf/Mafia game. Always reply in English, even if the question is in another language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions." + (personality === 'funny' ? ' Use a witty, playful tone with brief humor.' : personality === 'rap' ? ' Respond in short rhyming lines with a light rap cadence; keep it PG.' : '')
         },
         {
           role: "user",
@@ -89,7 +89,7 @@ async function callBaseten(question: string, gameContext?: any): Promise<string>
   return responseText.trim()
 }
 
-async function callJanitorAI(question: string, gameContext?: any): Promise<string> {
+async function callJanitorAI(question: string, gameContext?: any, personality?: 'default' | 'funny' | 'rap'): Promise<string> {
   const apiKey = process.env.JANITOR_AI_API_KEY
   
   if (!apiKey) {
@@ -99,7 +99,7 @@ async function callJanitorAI(question: string, gameContext?: any): Promise<strin
   console.log('Calling JanitorAI hackathon endpoint...')
   
   // Build the system prompt with game context
-  const systemPrompt = "You are an English-speaking game narrator and host for a Werewolf/Mafia game. Always reply in English, even if the question is in another language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions."
+  const systemPrompt = "You are an English-speaking game narrator and host for a Werewolf/Mafia game. Always reply in English, even if the question is in another language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions." + (personality === 'funny' ? ' Use a witty, playful tone with brief humor.' : personality === 'rap' ? ' Respond in short rhyming lines with a light rap cadence; keep it PG.' : '')
   const userPrompt = gameContext 
     ? `Current Game State:\n${JSON.stringify(gameContext, null, 2)}\n\nPlayer Question: ${question}\n\nProvide a brief, direct answer in English (1-2 sentences only).`
     : question
@@ -209,6 +209,7 @@ export async function POST(req: Request) {
     const question: string = body?.question || ''
     const gameContext = body?.gameContext
     const preferredProvider: 'baseten' | 'janitorai' | 'auto' = body?.provider || 'auto'
+    const personality: 'default' | 'funny' | 'rap' | undefined = body?.personality || body?.voicePersonality
     
     const useBaseten = !!process.env.BASETEN_API_KEY && !!process.env.BASETEN_MODEL_ID
     const useJanitorAI = !!process.env.JANITOR_AI_API_KEY
@@ -219,7 +220,7 @@ export async function POST(req: Request) {
     if (preferredProvider === 'baseten' && useBaseten) {
       try {
         console.log('Calling Baseten (user preference)...')
-        const answer = await callBaseten(question, gameContext)
+        const answer = await callBaseten(question, gameContext, personality)
         console.log('✅ Baseten response received:', answer.substring(0, 50))
         return NextResponse.json({ answer, provider: 'baseten' })
       } catch (error: any) {
@@ -227,7 +228,7 @@ export async function POST(req: Request) {
         console.log('Baseten failed, falling back to JanitorAI...')
         if (useJanitorAI) {
           try {
-            const answer = await callJanitorAI(question, gameContext)
+            const answer = await callJanitorAI(question, gameContext, personality)
             console.log('✅ JanitorAI fallback response received:', answer.substring(0, 50))
             return NextResponse.json({ answer, provider: 'janitorai' })
           } catch {}
@@ -236,7 +237,7 @@ export async function POST(req: Request) {
     } else if (preferredProvider === 'janitorai' && useJanitorAI) {
       try {
         console.log('Calling JanitorAI (user preference)...')
-        const answer = await callJanitorAI(question, gameContext)
+        const answer = await callJanitorAI(question, gameContext, personality)
         console.log('✅ JanitorAI response received:', answer.substring(0, 50))
         return NextResponse.json({ answer, provider: 'janitorai' })
       } catch (error: any) {
@@ -259,7 +260,7 @@ export async function POST(req: Request) {
       if (useBaseten) {
         try {
           console.log('Calling Baseten (auto mode)...')
-          const answer = await callBaseten(question, gameContext)
+          const answer = await callBaseten(question, gameContext, personality)
           console.log('✅ Baseten response received:', answer.substring(0, 50))
           return NextResponse.json({ answer, provider: 'baseten' })
         } catch (error: any) {
@@ -271,7 +272,7 @@ export async function POST(req: Request) {
       if (useJanitorAI) {
         try {
           console.log('Calling JanitorAI...')
-          const answer = await callJanitorAI(question, gameContext)
+          const answer = await callJanitorAI(question, gameContext, personality)
           console.log('✅ JanitorAI response received:', answer.substring(0, 50))
           return NextResponse.json({ answer, provider: 'janitorai' })
         } catch (error) {

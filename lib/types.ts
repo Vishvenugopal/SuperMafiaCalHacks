@@ -32,6 +32,7 @@ export interface GameSettings {
   customThemePrompt?: string
   hostPersonality: string
   aiProvider: 'baseten' | 'janitorai' | 'auto'
+  voicePersonality: 'default' | 'funny' | 'rap'
   rolesEnabled: Partial<Record<RoleId, number>>
   timers: {
     discussionSec: number

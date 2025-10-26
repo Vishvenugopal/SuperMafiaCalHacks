@@ -35,6 +35,7 @@ const defaultSettings: GameSettings = {
   theme: 'werewolf',
   hostPersonality: 'classic',
   aiProvider: 'auto',
+  voicePersonality: 'default',
   rolesEnabled: { werewolf: 1, seer: 1, medic: 1 },
   timers: { discussionSec: 120, defenseSec: 30, nightAutoAdvance: false },
   allowSelfProtect: false,

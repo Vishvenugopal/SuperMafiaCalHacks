@@ -190,13 +190,13 @@ export default function Home() {
       const res = await fetch('/api/host', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ question: prompt, gameContext, provider: g.settings.aiProvider }) 
+        body: JSON.stringify({ question: prompt, gameContext, provider: g.settings.aiProvider, personality: g.settings.voicePersonality }) 
       })
       const data = await res.json()
       const answer = String(data.answer || '')
       setHostResponse(answer)
       setHostProvider(data.provider || 'unknown')
-      await ttsSpeak(answer)
+      await ttsSpeak(answer, g.settings.voicePersonality)
     } catch (error) {
       console.error('Narrator error:', error)
     }
@@ -222,18 +222,18 @@ export default function Home() {
       const res = await fetch('/api/host', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, gameContext, provider: g.settings.aiProvider })
+        body: JSON.stringify({ question: q, gameContext, provider: g.settings.aiProvider, personality: g.settings.voicePersonality })
       })
       const data = await res.json()
       const answer = String(data.answer || '')
       setHostResponse(answer)
       setHostProvider(data.provider || 'unknown')
-      await ttsSpeak(answer)
+      await ttsSpeak(answer, g.settings.voicePersonality)
     } catch (error) {
       const errorMsg = 'I could not reach the host right now.'
       setHostResponse(errorMsg)
       setHostProvider('error')
-      await ttsSpeak(errorMsg)
+      await ttsSpeak(errorMsg, g.settings.voicePersonality)
     }
   }, [g.phase, g.round, g.players, g.eventLog, g.settings.aiProvider])
 
@@ -401,6 +401,18 @@ export default function Home() {
             <option value="baseten">Baseten</option>
             <option value="janitorai">JanitorAI</option>
           </select>
+          <div className="mt-2 space-y-1">
+            <label className="text-sm opacity-70">Narrator Voice Personality</label>
+            <select
+              value={g.settings.voicePersonality}
+              onChange={e => g.updateSettings({ voicePersonality: e.target.value as any })}
+              className="w-full select-glass text-sm"
+            >
+              <option value="default">Default</option>
+              <option value="funny">Funny</option>
+              <option value="rap">Rap</option>
+            </select>
+          </div>
         </Section>
         <div className="bg-white/5 rounded-xl p-3">
           <button 
