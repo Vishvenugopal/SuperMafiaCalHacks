@@ -1,24 +1,23 @@
 Response:
 {
-  "id": "chatcmpl-b9a7a825640d4ccc81d962e9990ee432",
+  "id": "chatcmpl-e25200d159964983b3bba8fa17782958",
   "choices": [
     {
       "index": 0,
       "message": {
-        "content": "\n",
-        "role": "assistant",
-        "reasoning": "The player vish is having technical issues with their microphone permissions and connection to the site. They're not asking a game-related question but rather reporting a technical problem.\n\nAs the AI Judge for this Werewolf/Mafia game, I should:\n1. Respond only in English (as instructed)\n2. Keep my response short and direct (1-2 sentences maximum)\n3. Address their technical issue without revealing any game information\n4. Not use Chinese or any other language\n\nI'll acknowledge"
+        "content": "\n\nThe village has lynched 'a', who was revealed to be the Seer. Their wisdom is now lost to the night.",
+        "role": "assistant"
       },
-      "finish_reason": "length"
+      "finish_reason": "stop"
     }
   ],
-  "created": 1761473175,
+  "created": 1761451685,
   "model": "zai-org/GLM-4.6",
   "object": "chat.completion",
   "usage": {
-    "prompt_tokens": 428,
-    "completion_tokens": 100,
-    "total_tokens": 528,
+    "prompt_tokens": 535,
+    "completion_tokens": 30,
+    "total_tokens": 565,
     "prompt_tokens_details": {
       "audio_tokens": 0,
       "cached_tokens": 0
@@ -32,4 +31,4 @@ Response:
   }
 }
 
-Time: 2025-10-26T10:06:14.811Z
+Time: 2025-10-26T04:08:03.819Z
