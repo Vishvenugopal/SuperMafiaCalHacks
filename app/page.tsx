@@ -200,18 +200,27 @@ export default function Home() {
     }
   }, [g.phase, now, getNarratorResponse])
 
-  // Narrator announcements for phase changes
+  // Narrator announcements for phase changes and timing DayStart reveal with TTS
   useEffect(() => {
-    if (g.phase.kind === 'DayStart' && isTtsAvailable()) {
+    if (g.phase.kind === 'DayStart') {
       const round = g.round
       const items = g.eventLog.filter(e => e.round === round && e.public)
       const death = items.find(e => e.type === 'night_kill')
-      if (death) {
-        const victim = g.players.find(p => p.id === death.data.playerId)
-        getNarratorResponse(`The village awakens to find ${victim?.name} dead. Announce this death dramatically and ominously in 1-2 sentences.`)
-      } else {
-        getNarratorResponse('Everyone survived the night. Express relief but remind them the danger remains. 1-2 sentences.')
-      }
+      ;(async () => {
+        setDayRevealShown(false)
+        setDayRevealDone(false)
+        if (isTtsAvailable()) {
+          if (death) {
+            const victim = g.players.find(p => p.id === death.data.playerId)
+            await getNarratorResponse(`The village awakens to find ${victim?.name} dead. Announce this death dramatically and ominously in 1-2 sentences.`)
+          } else {
+            await getNarratorResponse('Everyone survived the night. Express relief but remind them the danger remains. 1-2 sentences.')
+          }
+        }
+        // Reveal the card only after narration completes (or immediately if TTS unavailable)
+        setDayRevealShown(true)
+        setDayRevealDone(true)
+      })()
     } else if (g.phase.kind === 'NightStart') {
       getNarratorResponse('Night falls over the village. Warn them of the dangers ahead. Be ominous. 1-2 sentences.')
     } else if (g.phase.kind === 'LynchResolve') {
@@ -308,6 +317,9 @@ export default function Home() {
   const [nightRevealed, setNightRevealed] = useState(false)
   const [lastNightPlayerIndex, setLastNightPlayerIndex] = useState(-1)
   const [peekResult, setPeekResult] = useState<{ playerId: string; role: string } | null>(null)
+  const [dayRevealShown, setDayRevealShown] = useState(false)
+  const [dayRevealDone, setDayRevealDone] = useState(false)
+  const [showNightIntro, setShowNightIntro] = useState(false)
 
   // Reset revealed state when moving to next player
   if (g.phase.kind === 'RoleAssignment' && g.ui.roleRevealIndex !== lastRevealedIndex) {
@@ -349,10 +361,27 @@ export default function Home() {
             {g.ui.roleRevealIndex + 1 < g.ui.roleRevealOrder.length ? (
               <Button className="w-full" onClick={() => { setRoleRevealed(false); g.nextRoleReveal() }}>Done, pass to next</Button>
             ) : (
-              <Button className="w-full" onClick={() => g.proceedFromRoleReveal()}>Begin Night</Button>
+              <Button className="w-full" onClick={() => setShowNightIntro(true)}>Begin Night</Button>
             )}
           </div>
         )}
+      </div>
+    )
+  }
+
+  const renderNightIntro = () => {
+    const round = g.round
+    return (
+      <div className="space-y-6">
+        <div className="text-center text-3xl font-bold mb-4">🌙 Night {round} Begins</div>
+        <div className="space-y-4">
+          <div className="text-center text-xl opacity-80">Night descends. Prepare for the night phase.</div>
+          <div className="bg-purple-900/30 border-2 border-purple-500 rounded-xl p-6 space-y-3">
+            <div className="text-center text-4xl">🌌</div>
+            <div className="text-center text-lg text-purple-200">Get ready for night actions.</div>
+          </div>
+        </div>
+        <Button className="w-full" onClick={() => { setShowNightIntro(false); g.proceedFromRoleReveal() }}>Begin Night Actions</Button>
       </div>
     )
   }
@@ -486,25 +515,31 @@ export default function Home() {
         {death && victim ? (
           <div className="space-y-4">
             <div className="text-center text-xl opacity-80">The village awakens to a horrifying discovery...</div>
-            <div className="bg-red-900/30 border-2 border-red-500 rounded-xl p-6 space-y-3">
-              <div className="text-center text-4xl">💀</div>
-              <div className="text-center text-3xl font-bold text-red-400">{victim.name}</div>
-              <div className="text-center text-xl text-red-300">has been eliminated</div>
-              <div className="text-center text-sm opacity-70">Killed during the night</div>
-            </div>
+            {dayRevealShown && (
+              <div className="bg-red-900/30 border-2 border-red-500 rounded-xl p-6 space-y-3">
+                <div className="text-center text-4xl">💀</div>
+                <div className="text-center text-3xl font-bold text-red-400">{victim.name}</div>
+                <div className="text-center text-xl text-red-300">has been eliminated</div>
+                <div className="text-center text-sm opacity-70">Killed during the night</div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
             <div className="text-center text-xl opacity-80">The village awakens...</div>
-            <div className="bg-green-900/30 border-2 border-green-500 rounded-xl p-6 space-y-3">
-              <div className="text-center text-4xl">✨</div>
-              <div className="text-center text-2xl font-bold text-green-400">Everyone Survived!</div>
-              <div className="text-center text-sm opacity-70">No one was killed during the night</div>
-            </div>
+            {dayRevealShown && (
+              <div className="bg-green-900/30 border-2 border-green-500 rounded-xl p-6 space-y-3">
+                <div className="text-center text-4xl">✨</div>
+                <div className="text-center text-2xl font-bold text-green-400">Everyone Survived!</div>
+                <div className="text-center text-sm opacity-70">No one was killed during the night</div>
+              </div>
+            )}
           </div>
         )}
-        
-        <Button className="w-full" onClick={() => g.startDiscussion()}>Begin Discussion</Button>
+
+        {dayRevealDone && (
+          <Button className="w-full" onClick={() => g.startDiscussion()}>Begin Discussion</Button>
+        )}
       </div>
     )
   }
@@ -671,7 +706,7 @@ export default function Home() {
   return (
     <main className="space-y-6">
       {g.phase.kind === 'Lobby' && renderLobby()}
-      {g.phase.kind === 'RoleAssignment' && renderRoleAssignment()}
+      {showNightIntro ? renderNightIntro() : (g.phase.kind === 'RoleAssignment' && renderRoleAssignment())}
       {g.phase.kind === 'NightStart' && renderNightStart()}
       {g.phase.kind === 'DayStart' && renderDayStart()}
       {g.phase.kind === 'Discussion' && renderDiscussion()}

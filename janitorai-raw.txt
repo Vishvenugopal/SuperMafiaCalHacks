@@ -3,49 +3,33 @@ data: {"choices":[{"delta":{"content":""}}]}
 
 data: {"choices":[{"delta":{"content":"The"}}]}
 
-data: {"choices":[{"delta":{"content":" shadows length"}}]}
+data: {"choices":[{"delta":{"content":" villagers"}}]}
 
-data: {"choices":[{"delta":{"content":"en as"}}]}
+data: {"choices":[{"delta":{"content":" have spoken"}}]}
 
-data: {"choices":[{"delta":{"content":" the night envelop"}}]}
+data: {"choices":[{"delta":{"content":", and"}}]}
 
-data: {"choices":[{"delta":{"content":"s the"}}]}
+data: {"choices":[{"delta":{"content":" j has been eliminated"}}]}
 
-data: {"choices":[{"delta":{"content":" village, and"}}]}
+data: {"choices":[{"delta":{"content":" by"}}]}
 
-data: {"choices":[{"delta":{"content":" with"}}]}
+data: {"choices":[{"delta":{"content":" vote. Their"}}]}
 
-data: {"choices":[{"delta":{"content":" it comes the"}}]}
+data: {"choices":[{"delta":{"content":" fate is sealed"}}]}
 
-data: {"choices":[{"delta":{"content":" unseen"}}]}
+data: {"choices":[{"delta":{"content":" in"}}]}
 
-data: {"choices":[{"delta":{"content":" menace"}}]}
+data: {"choices":[{"delta":{"content":" this"}}]}
 
-data: {"choices":[{"delta":{"content":" that stalks among"}}]}
+data: {"choices":[{"delta":{"content":" second"}}]}
 
-data: {"choices":[{"delta":{"content":" you."}}]}
+data: {"choices":[{"delta":{"content":" round of the"}}]}
 
-data: {"choices":[{"delta":{"content":" Trust"}}]}
-
-data: {"choices":[{"delta":{"content":" no one,"}}]}
-
-data: {"choices":[{"delta":{"content":" for the"}}]}
-
-data: {"choices":[{"delta":{"content":" darkness hides"}}]}
-
-data: {"choices":[{"delta":{"content":" more"}}]}
-
-data: {"choices":[{"delta":{"content":" than just"}}]}
-
-data: {"choices":[{"delta":{"content":" your"}}]}
-
-data: {"choices":[{"delta":{"content":" fears"}}]}
-
-data: {"choices":[{"delta":{"content":"."}}]}
+data: {"choices":[{"delta":{"content":" game."}}]}
 
 
 data: [DONE]
 
 
 
-Time: 2025-10-26T00:26:31.697Z
+Time: 2025-10-26T00:41:54.308Z
