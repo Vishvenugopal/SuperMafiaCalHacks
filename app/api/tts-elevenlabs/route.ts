@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getElevenLabsVoiceId } from '@/lib/voices'
+import { getEnv } from '@/lib/env-validation'
 
 // Simple in-memory throttles (per process)
 let lastAt = 0
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No text provided' }, { status: 400 })
     }
 
-    const apiKey = process.env.ELEVENLABS_API_KEY
+    const apiKey = getEnv('ELEVENLABS_API_KEY')
     
     if (!apiKey) {
       console.log('ElevenLabs API key not configured, falling back to Web Speech API')
