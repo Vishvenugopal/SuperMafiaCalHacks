@@ -7,7 +7,7 @@ let endTimer: any = null
 let onPartialCb: ((t: string) => void) | null = null
 let onFinalCb: ((t: string) => void) | null = null
 
-export async function ttsSpeak(text: string, personality?: 'default' | 'funny' | 'rap') {
+export async function ttsSpeak(text: string) {
   if (typeof window === 'undefined') return
   if (!text) return
   
@@ -16,7 +16,7 @@ export async function ttsSpeak(text: string, personality?: 'default' | 'funny' |
     const response = await fetch('/api/tts-elevenlabs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, personality })
+      body: JSON.stringify({ text })
     })
     
     if (response.ok && response.headers.get('content-type')?.includes('audio')) {

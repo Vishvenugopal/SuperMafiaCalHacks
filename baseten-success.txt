@@ -1,23 +1,24 @@
 Response:
 {
-  "id": "chatcmpl-145b3cff92de4d2cbcf8c24e58bac519",
+  "id": "chatcmpl-24627bff8e1449b6803567c9520ce078",
   "choices": [
     {
       "index": 0,
       "message": {
-        "content": "\n\nThe village awakens to find fwefeq dead,  \nA chilling silence fills the morning air instead.",
-        "role": "assistant"
+        "content": "\n",
+        "role": "assistant",
+        "reasoning": "用户正在询问一个狼人杀/黑手党游戏的主持人。\n游戏尚未开始。\n用户的问题是“IMPORTANT: Respond in ENGLISH ONLY. No Chinese. Provide a brief, direct answer in English (1-2 sentences only).”\n\n这有点元。用户是在*告诉我*如何回应，而不是在问一个关于游戏的问题。他们正在设定我回应的规则。\n\n我的角色设定是“一个狼人杀/黑手党游戏的英文游戏叙述者和主持人”。\n我的"
       },
-      "finish_reason": "stop"
+      "finish_reason": "length"
     }
   ],
-  "created": 1761477982,
+  "created": 1761483881,
   "model": "zai-org/GLM-4.6",
   "object": "chat.completion",
   "usage": {
-    "prompt_tokens": 589,
-    "completion_tokens": 25,
-    "total_tokens": 614,
+    "prompt_tokens": 109,
+    "completion_tokens": 100,
+    "total_tokens": 209,
     "prompt_tokens_details": {
       "audio_tokens": 0,
       "cached_tokens": 0
@@ -31,4 +32,4 @@ Response:
   }
 }
 
-Time: 2025-10-26T11:26:26.866Z
+Time: 2025-10-26T13:04:40.467Z

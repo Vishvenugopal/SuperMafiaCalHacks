@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getElevenLabsVoiceId } from '@/lib/voices'
 
 export async function POST(req: Request) {
   try {
     const body = await req.json()
     const text: string = body?.text || ''
-    const personality: 'default' | 'funny' | 'rap' | undefined = body?.personality
     
     if (!text) {
       return NextResponse.json({ error: 'No text provided' }, { status: 400 })
@@ -23,7 +21,7 @@ export async function POST(req: Request) {
 
     // Use ElevenLabs TTS API
     // Voice ID: You can get this from https://elevenlabs.io/voice-library
-    const voiceId = getElevenLabsVoiceId(personality || 'default')
+    const voiceId = process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL' // Default: Sarah voice
     
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
