@@ -24,15 +24,17 @@ async function callBaseten(question: string, gameContext?: any, personality?: 'd
       messages: [
         {
           role: "system",
-          content: "You are an English-speaking game narrator and host for a Werewolf/Mafia game. Always reply in English, even if the question is in another language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions." + (personality === 'funny' ? ' Use a witty, playful tone with brief humor.' : personality === 'rap' ? ' Respond in short rhyming lines with a light rap cadence; keep it PG.' : '')
+          content: "You are an English-speaking game narrator and host for a Werewolf/Mafia game. CRITICAL: You MUST respond ONLY in English. Never use Chinese or any other language. Keep responses SHORT and direct (1-2 sentences maximum). Only reveal information players should know - no spoilers about hidden roles or secret actions."
         },
         {
           role: "user",
-          content: `Current Game State:\n${gameContext ? JSON.stringify(gameContext, null, 2) : 'Game not started yet'}\n\nPlayer Question: ${question}\n\nProvide a brief, direct answer in English (1-2 sentences only).`
+          content: `Current Game State:\n${gameContext ? JSON.stringify(gameContext, null, 2) : 'Game not started yet'}\n\nPlayer Question: ${question}\n\nIMPORTANT: Respond in ENGLISH ONLY. No Chinese. Provide a brief, direct answer in English (1-2 sentences only).`
         }
       ],
-      max_tokens: 80,
-      temperature: 0.8,
+      language: "en",
+      max_tokens: 100,
+      temperature: 0.7,
+      top_p: 0.9,
       stream: false
     })
   })

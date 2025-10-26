@@ -1,0 +1,384 @@
+import { NextResponse } from 'next/server'
+
+// In-memory room storage (in production, use Redis or a database)
+interface Room {
+  code: string
+  hostId: string
+  players: Array<{
+    id: string
+    name: string
+    deviceId: string
+    joinedAt: number
+  }>
+  gamePhase: 'lobby' | 'playing'
+  gameState: any
+  nightActionsComplete: Set<string> // Track which players completed night actions
+  rolesRevealed: Set<string> // Track which players revealed their role
+  createdAt: number
+  lastActivity: number
+}
+
+const rooms = new Map<string, Room>()
+console.log('🏠 Room API initialized - in-memory rooms cleared')
+
+// Cleanup old rooms every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  const timeout = 4 * 60 * 60 * 1000 // 4 hours
+  
+  for (const [code, room] of rooms.entries()) {
+    if (now - room.lastActivity > timeout) {
+      rooms.delete(code)
+      console.log(`Cleaned up inactive room: ${code}`)
+    }
+  }
+}, 5 * 60 * 1000)
+
+export async function POST(request: Request) {
+  try {
+    let body: any = {}
+    try {
+      body = await request.json()
+    } catch {
+      body = {}
+    }
+    const { action, roomCode, playerName, deviceId, gameState, trackingType } = body
+    if (!action) {
+      return NextResponse.json({ success: false, error: 'Missing action' }, { status: 400 })
+    }
+    
+    switch (action) {
+      case 'create': {
+        // Create a new room
+        const code = generateRoomCode()
+        const playerId = `${deviceId}_${Date.now()}`
+        
+        const room: Room = {
+          code,
+          hostId: playerId,
+          players: [{
+            id: playerId,
+            name: playerName,
+            deviceId,
+            joinedAt: Date.now()
+          }],
+          gamePhase: 'lobby',
+          gameState: null,
+          nightActionsComplete: new Set(),
+          rolesRevealed: new Set(),
+          createdAt: Date.now(),
+          lastActivity: Date.now()
+        }
+        
+        rooms.set(code, room)
+        console.log(`Created room ${code} with host ${playerName}`)
+        
+        return NextResponse.json({
+          success: true,
+          roomCode: code,
+          playerId,
+          isHost: true,
+          players: room.players
+        })
+      }
+      
+      case 'join': {
+        // Join an existing room
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          console.log(`❌ Join failed: Room ${roomCode} not found. Active rooms: ${Array.from(rooms.keys()).join(', ')}`)
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        // Check if this device already joined
+        const existing = room.players.find(p => p.deviceId === deviceId)
+        if (existing) {
+          room.lastActivity = Date.now()
+          return NextResponse.json({
+            success: true,
+            roomCode: room.code,
+            playerId: existing.id,
+            isHost: existing.id === room.hostId,
+            players: room.players
+          })
+        }
+        
+        // Add new player
+        const playerId = `${deviceId}_${Date.now()}`
+        room.players.push({
+          id: playerId,
+          name: playerName,
+          deviceId,
+          joinedAt: Date.now()
+        })
+        
+        room.lastActivity = Date.now()
+        console.log(`✅ ${playerName} joined room ${roomCode} (${room.players.length} players total)`)
+        
+        return NextResponse.json({
+          success: true,
+          roomCode: room.code,
+          playerId,
+          isHost: false,
+          players: room.players
+        })
+      }
+      
+      case 'get_state': {
+        // Get current room state
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        room.lastActivity = Date.now()
+        
+        const hasGameState = !!room.gameState
+        if (room.gamePhase === 'playing') {
+          console.log(`📊 get_state for room ${roomCode}: phase=${room.gamePhase}, hasGameState=${hasGameState}`)
+        }
+        
+        return NextResponse.json({
+          success: true,
+          players: room.players,
+          gameState: room.gameState,
+          gamePhase: room.gamePhase,
+          hostId: room.hostId,
+          nightActionsComplete: room.nightActionsComplete.size,
+          rolesRevealed: room.rolesRevealed.size,
+          allNightActionsComplete: room.nightActionsComplete.size >= room.players.length,
+          allRolesRevealed: room.rolesRevealed.size >= room.players.length
+        })
+      }
+      
+      case 'start_game': {
+        // Start the game (host only)
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        // Verify this is the host
+        const player = room.players.find(p => p.deviceId === deviceId)
+        if (!player || player.id !== room.hostId) {
+          return NextResponse.json({
+            success: false,
+            error: 'Only host can start game'
+          }, { status: 403 })
+        }
+        
+        room.gamePhase = 'playing'
+        room.lastActivity = Date.now()
+        
+        console.log(`Game started in room ${roomCode}`)
+        
+        return NextResponse.json({
+          success: true
+        })
+      }
+      
+      case 'update_game_state': {
+        // Update game state (host only)
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        // Verify this is the host
+        const player = room.players.find(p => p.deviceId === deviceId)
+        if (!player || player.id !== room.hostId) {
+          return NextResponse.json({
+            success: false,
+            error: 'Only host can update game state'
+          }, { status: 403 })
+        }
+        
+        room.gameState = gameState
+        // Ensure phase flag is consistent for clients
+        room.gamePhase = 'playing'
+        room.lastActivity = Date.now()
+        
+        console.log(`✅ Game state updated for room ${roomCode}`)
+        console.log(`   Phase: ${gameState?.phase?.kind}, Players: ${gameState?.players?.length}, Seed: ${gameState?.seed}`)
+        
+        return NextResponse.json({
+          success: true
+        })
+      }
+      
+      case 'mark_night_action_complete': {
+        // Mark that a player completed their night action
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        room.nightActionsComplete.add(deviceId)
+        room.lastActivity = Date.now()
+        
+        console.log(`Night action complete for ${deviceId} in room ${roomCode} (${room.nightActionsComplete.size}/${room.players.length})`)
+        
+        return NextResponse.json({
+          success: true,
+          completed: room.nightActionsComplete.size,
+          total: room.players.length
+        })
+      }
+      
+      case 'mark_role_revealed': {
+        // Mark that a player revealed their role
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        room.rolesRevealed.add(deviceId)
+        room.lastActivity = Date.now()
+        
+        console.log(`Role revealed for ${deviceId} in room ${roomCode} (${room.rolesRevealed.size}/${room.players.length})`)
+        
+        return NextResponse.json({
+          success: true,
+          completed: room.rolesRevealed.size,
+          total: room.players.length
+        })
+      }
+      
+      case 'reset_phase_tracking': {
+        // Reset tracking (e.g., when entering a new night or role assignment)
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({
+            success: false,
+            error: 'Room not found'
+          }, { status: 404 })
+        }
+        
+        if (trackingType === 'night') {
+          room.nightActionsComplete.clear()
+        } else if (trackingType === 'roles') {
+          room.rolesRevealed.clear()
+        }
+        
+        room.lastActivity = Date.now()
+        
+        console.log(`Reset ${trackingType} tracking for room ${roomCode}`)
+        
+        return NextResponse.json({
+          success: true
+        })
+      }
+      
+      case 'leave': {
+        // Leave room
+        const room = rooms.get(roomCode?.toUpperCase())
+        
+        if (!room) {
+          return NextResponse.json({ success: true })
+        }
+        
+        const leavingPlayer = room.players.find(p => p.deviceId === deviceId)
+        const wasHost = leavingPlayer?.id === room.hostId
+        
+        room.players = room.players.filter(p => p.deviceId !== deviceId)
+        room.lastActivity = Date.now()
+        
+        // If no players left, delete room
+        if (room.players.length === 0) {
+          rooms.delete(roomCode!.toUpperCase())
+          console.log(`Room ${roomCode} deleted (empty)`)
+        } else {
+          // If host left, transfer to next player
+          if (wasHost && room.players.length > 0) {
+            room.hostId = room.players[0].id
+            console.log(`Host left room ${roomCode}, transferred to ${room.players[0].name}`)
+          } else {
+            console.log(`Player left room ${roomCode}, ${room.players.length} remaining`)
+          }
+        }
+        
+        return NextResponse.json({ success: true })
+      }
+      
+      default:
+        return NextResponse.json({
+          success: false,
+          error: 'Unknown action'
+        }, { status: 400 })
+    }
+  } catch (error) {
+    console.error('Room API error:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
+}
+
+export async function GET(request: Request) {
+  // Get room info for debugging
+  const url = new URL(request.url)
+  const roomCode = url.searchParams.get('code')
+  
+  if (!roomCode) {
+    return NextResponse.json({
+      totalRooms: rooms.size,
+      rooms: Array.from(rooms.values()).map(r => ({
+        code: r.code,
+        players: r.players.length,
+        createdAt: new Date(r.createdAt).toISOString()
+      }))
+    })
+  }
+  
+  const room = rooms.get(roomCode.toUpperCase())
+  if (!room) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+  }
+  
+  return NextResponse.json({
+    code: room.code,
+    players: room.players,
+    hasGameState: !!room.gameState
+  })
+}
+
+function generateRoomCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let code = ''
+  
+  // Keep trying until we find an unused code
+  do {
+    code = ''
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+  } while (rooms.has(code))
+  
+  return code
+}

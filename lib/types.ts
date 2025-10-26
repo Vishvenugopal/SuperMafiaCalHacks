@@ -35,6 +35,7 @@ export interface GameSettings {
   voicePersonality: 'default' | 'funny' | 'rap'
   rolesEnabled: Partial<Record<RoleId, number>>
   timers: {
+    playerTalkingSec: number
     discussionSec: number
     defenseSec: number
     nightAutoAdvance: boolean
@@ -63,6 +64,7 @@ export type Phase =
   | { kind: 'Night_Seer'; round: number; seerPlayerId?: string }
   | { kind: 'NightResolve'; round: number }
   | { kind: 'DayStart'; round: number }
+  | { kind: 'PlayerTalking'; round: number; endsAt: number }
   | { kind: 'Discussion'; round: number; endsAt?: number }
   | { kind: 'Accusation'; round: number }
   | { kind: 'Defense'; round: number; defendantId: string; endsAt?: number }

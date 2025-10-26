@@ -11,7 +11,20 @@ const GAME_TITLE_STYLE = {
   paddingTop: '0.1em',
   paddingBottom: '0.1em',
   lineHeight: '1.2'
-}
+} as const
+
+// Card title styling
+const CARD_TITLE_STYLE = {
+  fontFamily: 'Boldonse, sans-serif',
+  background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+  paddingTop: '0.1em',
+  paddingBottom: '0.1em',
+  lineHeight: '1.2',
+  display: 'inline-block'
+} as const
 
 interface GameModeCardProps {
   title: string
@@ -32,7 +45,7 @@ function GameModeCard({ title, description, icon, href, locked = false }: GameMo
         <div className="absolute top-4 right-4 text-3xl opacity-70">🔒</div>
       )}
       <div className="text-7xl mb-6 text-center animate-float">{icon}</div>
-      <h2 className="text-4xl font-bold text-center mb-4" style={{ fontFamily: 'Boldonse, sans-serif', background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', paddingTop: '0.1em', paddingBottom: '0.1em', lineHeight: '1.2', display: 'inline-block' }}>
+      <h2 className="text-4xl font-bold text-center mb-4" style={CARD_TITLE_STYLE}>
         {title}
       </h2>
       <p className="text-center text-gray-300 text-base leading-relaxed">
@@ -51,7 +64,8 @@ function GameModeCard({ title, description, icon, href, locked = false }: GameMo
   }
 
   return (
-    <Link href={href as string} className="block h-full">
+    <Link href={{ pathname: href }} className="block h-full">
+
       {cardContent}
     </Link>
   )
@@ -64,7 +78,7 @@ export default function Home() {
         {/* Title */}
         <div className="text-center space-y-4">
           <h1 className="text-8xl font-bold mb-4 animate-float" style={{...GAME_TITLE_STYLE, display: 'inline-block'}}>
-            Super Mafia
+            SuperMafia
           </h1>
           <div className="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-red-500 to-transparent rounded-full"></div>
         </div>
@@ -84,10 +98,10 @@ export default function Home() {
           />
           
           <GameModeCard
-            title="Game Mode 2"
-            description="A new exciting game mode coming soon"
-            icon="🎭"
-            locked={true}
+            title="AI Judge"
+            description="Full Werewolf game where AI Judge decides eliminations (multi-device)"
+            icon="⚖️"
+            href="/judge-mode"
           />
         </div>
       </div>

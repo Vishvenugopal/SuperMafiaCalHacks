@@ -14,6 +14,8 @@ type Actions = {
   updatePlayer: (id: string, patch: Partial<Player>) => void
   updateSettings: (patch: Partial<GameSettings>) => void
   updateRolesEnabled: (role: RoleId, count: number) => void
+  setPlayersFromNames: (names: string[]) => void
+  startGameWithSeed: (seed: number, settingsOverride?: Partial<GameSettings>) => void
   startGame: () => void
   nextRoleReveal: () => void
   proceedFromRoleReveal: () => void
@@ -21,11 +23,13 @@ type Actions = {
   chooseKill: (playerId: string | undefined) => void
   choosePeek: (playerId: string | undefined) => void
   resolveNight: () => void
+  startPlayerTalking: () => void
   startDiscussion: () => void
   startVoting: () => void
   castVoteForCurrent: (targetId: string | null) => void
   resolveVote: () => void
   continueAfterLynch: () => void
+  hydrateFromHost: (snapshot: Partial<GameState>) => void
   reset: () => void
 }
 
@@ -37,7 +41,7 @@ const defaultSettings: GameSettings = {
   aiProvider: 'auto',
   voicePersonality: 'default',
   rolesEnabled: { werewolf: 1, seer: 1, medic: 1 },
-  timers: { discussionSec: 120, defenseSec: 30, nightAutoAdvance: false },
+  timers: { playerTalkingSec: 90, discussionSec: 120, defenseSec: 30, nightAutoAdvance: false },
   allowSelfProtect: false,
   tieRule: 'no-lynch',
   apiKeys: {
@@ -102,6 +106,18 @@ export const useGame = create<Store>((set, get) => ({
   updateRolesEnabled: (role: RoleId, count: number) =>
     set((s: Store) => ({ settings: { ...s.settings, rolesEnabled: { ...s.settings.rolesEnabled, [role]: Math.max(0, Math.floor(count)) } } })),
 
+  setPlayersFromNames: (names: string[]) =>
+    set(() => ({ players: names.map(name => ({ id: rid(), name, alive: true })) })),
+
+  startGameWithSeed: (seed: number, settingsOverride?: Partial<GameSettings>) => {
+    const s = get()
+    if (s.players.length < 5) return
+    const settings: GameSettings = { ...s.settings, ...(settingsOverride || {}) }
+    const players = assignRoles(s.players, settings, seed)
+    const order = players.map(p => p.id)
+    set({ seed, settings, players, phase: { kind: 'RoleAssignment' }, ui: { roleRevealOrder: order, roleRevealIndex: 0 }, round: 1 })
+  },
+
   startGame: () => {
     const s = get()
     if (s.players.length < 5) return
@@ -142,6 +158,8 @@ export const useGame = create<Store>((set, get) => ({
     const players = s.players.map((p: Player) => (p.id === killedId ? { ...p, alive: false } : p))
     set((s2: Store) => ({ players, eventLog: events, phase: { kind: 'DayStart', round: s2.round } }))
   },
+
+  startPlayerTalking: () => set((s: Store) => ({ phase: { kind: 'PlayerTalking', round: s.round, endsAt: Date.now() + s.settings.timers.playerTalkingSec * 1000 } })),
 
   startDiscussion: () => set((s: Store) => ({ phase: { kind: 'Discussion', round: s.round, endsAt: Date.now() + s.settings.timers.discussionSec * 1000 } })),
 
@@ -209,6 +227,19 @@ export const useGame = create<Store>((set, get) => ({
       return
     }
     set({ round: s.round + 1, phase: { kind: 'NightStart', round: s.round + 1 }, nightActions: {} })
+  },
+
+  hydrateFromHost: (snapshot: Partial<GameState>) => {
+    // Only apply known safe fields
+    set((s: Store) => ({
+      seed: snapshot.seed ?? s.seed,
+      settings: snapshot.settings ? { ...s.settings, ...snapshot.settings } : s.settings,
+      players: snapshot.players ?? s.players,
+      phase: snapshot.phase ?? s.phase,
+      round: snapshot.round ?? s.round,
+      nightActions: snapshot.nightActions ?? s.nightActions,
+      eventLog: snapshot.eventLog ?? s.eventLog,
+    }))
   },
 
   reset: () => set({
