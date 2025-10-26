@@ -519,7 +519,9 @@ export default function JudgeMode() {
         if (response.ok) {
           const data = await response.json()
           if (data.success) {
-            setRoomPlayers(data.players || [])
+            const newPlayers = data.players || []
+            console.log(`[LOBBY POLL] Players in room: ${newPlayers.length}`, newPlayers.map((p: any) => p.name))
+            setRoomPlayers(newPlayers)
             setHostId(data.hostId || '')
             
             // Check if game has started and host snapshot is ready
