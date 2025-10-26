@@ -200,7 +200,7 @@ export default function Home() {
     } catch (error) {
       console.error('Narrator error:', error)
     }
-  }, [g.phase, g.round, g.players, g.eventLog, g.settings.aiProvider])
+  }, [g.phase, g.round, g.players, g.eventLog, g.settings.aiProvider, g.settings.voicePersonality])
 
   // Handle final transcript -> call host (wrapped in useCallback to prevent stale closures)
   const handleFinalTranscript = useCallback(async (finalText: string | null) => {
